@@ -2,6 +2,41 @@ from openai import OpenAI
 import os
 from database import Database
 import json
+from pydantic import BaseModel
+
+
+class CurrentRange(BaseModel):
+    min: int
+    max: int
+
+
+class CandidateGuess(BaseModel):
+    value: int
+    reasoning: str
+
+
+class ExploreResponse(BaseModel):
+    analysis: str
+    current_range: CurrentRange
+    pattern_insights: str
+    candidate_guesses: list[CandidateGuess]
+    confidence: str
+
+
+class RefineResponse(BaseModel):
+    evaluation: str
+    optimal_strategy: str
+    recommended_guess: int
+    reasoning: str
+    expected_outcome: str
+    backup_guess: int
+
+
+class ActResponse(BaseModel):
+    final_guess: int
+    confidence_level: str
+    reasoning: str
+    expected_feedback: str
 
 
 def get_model_names():

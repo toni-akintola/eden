@@ -1,6 +1,13 @@
 import os
 from typing import List
-from constants import build_explore_prompt, build_refine_prompt, build_act_prompt
+from constants import (
+    build_explore_prompt,
+    build_refine_prompt,
+    build_act_prompt,
+    ExploreResponse,
+    RefineResponse,
+    ActResponse,
+)
 from database import Attempt, Database
 from openai import OpenAI
 import json
@@ -28,44 +35,44 @@ class Ensemble:
     def _explore(self) -> dict:
         """Explore phase: Analyze past attempts and generate candidate guesses"""
         system_prompt = build_explore_prompt(self.task, self.database)
-        response = self.client.chat.completions.create(
+        response = self.client.responses.parse(
             model=self.models["explore"],
-            messages=[
+            input=[
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": "Please analyze the attempts and provide your exploration.",
                 },
             ],
+            text_format=ExploreResponse,
         )
-        print(response.choices[0].message.content)
-        return json.loads(response.choices[0].message.content)
+        return response.output_parsed.model_dump()
 
     def _refine(self, exploration: dict) -> dict:
         """Refine phase: Optimize the exploration into a concrete strategy"""
         system_prompt = build_refine_prompt(exploration)
-        response = self.client.chat.completions.create(
+        response = self.client.responses.parse(
             model=self.models["refine"],
-            messages=[
+            input=[
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
                     "content": "Please refine the exploration into an optimal strategy.",
                 },
             ],
+            text_format=RefineResponse,
         )
-        print(response.choices[0].message.content)
-        return json.loads(response.choices[0].message.content)
+        return response.output_parsed.model_dump()
 
     def _act(self, refinement: dict) -> dict:
         """Act phase: Make the final decision on what number to guess"""
         system_prompt = build_act_prompt(refinement)
-        response = self.client.chat.completions.create(
+        response = self.client.responses.parse(
             model=self.models["act"],
-            messages=[
+            input=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": "Please make your final decision."},
             ],
+            text_format=ActResponse,
         )
-        print(response.choices[0].message.content)
-        return json.loads(response.choices[0].message.content)
+        return response.output_parsed.model_dump()
