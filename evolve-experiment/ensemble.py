@@ -33,7 +33,7 @@ class Ensemble:
         return action
 
     def _explore(self) -> dict:
-        """Explore phase: Analyze past attempts and generate candidate guesses"""
+        """Explore phase: Analyze past configurations and generate candidate hyperparameters"""
         system_prompt = build_explore_prompt(self.task, self.database)
         response = self.client.responses.parse(
             model=self.models["explore"],
@@ -41,7 +41,7 @@ class Ensemble:
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": "Please analyze the attempts and provide your exploration.",
+                    "content": "Please analyze the past configurations and provide your exploration.",
                 },
             ],
             text_format=ExploreResponse,
@@ -49,7 +49,7 @@ class Ensemble:
         return response.output_parsed.model_dump()
 
     def _refine(self, exploration: dict) -> dict:
-        """Refine phase: Optimize the exploration into a concrete strategy"""
+        """Refine phase: Optimize the exploration into an optimal hyperparameter configuration"""
         system_prompt = build_refine_prompt(exploration)
         response = self.client.responses.parse(
             model=self.models["refine"],
@@ -57,7 +57,7 @@ class Ensemble:
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": "Please refine the exploration into an optimal strategy.",
+                    "content": "Please refine the exploration into an optimal hyperparameter configuration.",
                 },
             ],
             text_format=RefineResponse,
@@ -65,14 +65,30 @@ class Ensemble:
         return response.output_parsed.model_dump()
 
     def _act(self, refinement: dict) -> dict:
-        """Act phase: Make the final decision on what number to guess"""
+        """Act phase: Make the final decision on hyperparameter configuration"""
         system_prompt = build_act_prompt(refinement)
         response = self.client.responses.parse(
             model=self.models["act"],
             input=[
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": "Please make your final decision."},
+                {
+                    "role": "user",
+                    "content": "Please make your final hyperparameter configuration decision.",
+                },
             ],
             text_format=ActResponse,
         )
-        return response.output_parsed.model_dump()
+        result = response.output_parsed.model_dump()
+        # Extract the hyperparameters from final_config
+        final_config = result.get("final_config", {})
+        return {
+            "final_config": final_config,
+            "hyperparameters": {
+                "num_servers": final_config.get("num_servers", 1),
+                "service_rate": final_config.get("service_rate", 1.0),
+                "queue_discipline": final_config.get("queue_discipline", "FIFO"),
+            },
+            "confidence_level": result.get("confidence_level", "unknown"),
+            "reasoning": result.get("reasoning", "N/A"),
+            "expected_metrics": result.get("expected_metrics", "N/A"),
+        }
