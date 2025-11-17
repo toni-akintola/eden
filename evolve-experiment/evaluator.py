@@ -148,10 +148,12 @@ class Evaluator:
         rho = self.target_arrival_rate / (num_servers * service_rate)
         if rho >= 1.0:
             observations.append(
-                "⚠️ System is unstable (arrival rate >= service capacity) - queues will grow indefinitely!"
+                "WARNING: System is unstable (arrival rate >= service capacity) - queues will grow indefinitely!"
             )
         elif rho > 0.9:
-            observations.append("⚠️ System is near capacity - high risk of instability")
+            observations.append(
+                "WARNING: System is near capacity - high risk of instability"
+            )
         elif rho < 0.3:
             observations.append("System has excess capacity - may be over-provisioned")
 

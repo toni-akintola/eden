@@ -19,7 +19,7 @@ def test_explore_prompt():
         Attempt(
             attempt={"num_servers": 1, "service_rate": 0.5, "queue_discipline": "FIFO"},
             score=45.2,
-            observations="High wait times - system is struggling | Long queues (avg: 8.3) - consider more servers or faster service | Very high server utilization - servers are overloaded | Throughput: 78 agents served | ⚠️ System is unstable (arrival rate >= service capacity) - queues will grow indefinitely!",
+            observations="High wait times - system is struggling | Long queues (avg: 8.3) - consider more servers or faster service | Very high server utilization - servers are overloaded | Throughput: 78 agents served | WARNING: System is unstable (arrival rate >= service capacity) - queues will grow indefinitely!",
         )
     )
     db.add_attempt(
@@ -110,13 +110,13 @@ def test_act_prompt():
 
 
 def main():
-    print("\n🔍 Testing all three prompt stages for queuing system optimization...\n")
+    print("\nTesting all three prompt stages for queuing system optimization...\n")
 
     test_explore_prompt()
     test_refine_prompt()
     test_act_prompt()
 
-    print("✅ All prompts generated successfully!")
+    print("All prompts generated successfully!")
     print("\nThese are the prompts that will be sent to the AI models.")
     print("You can review them to understand how the system works.")
 
