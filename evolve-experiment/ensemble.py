@@ -8,9 +8,8 @@ from utils import (
     RefineResponse,
     ActResponse,
 )
-from database import Attempt, Database
+from database import Database
 from openai import OpenAI
-import json
 
 
 class Ensemble:
@@ -78,17 +77,5 @@ class Ensemble:
             ],
             text_format=ActResponse,
         )
-        result = response.output_parsed.model_dump()
-        # Extract the hyperparameters from final_config
-        final_config = result.get("final_config", {})
-        return {
-            "final_config": final_config,
-            "hyperparameters": {
-                "num_servers": final_config.get("num_servers", 1),
-                "service_rate": final_config.get("service_rate", 1.0),
-                "queue_discipline": final_config.get("queue_discipline", "FIFO"),
-            },
-            "confidence_level": result.get("confidence_level", "unknown"),
-            "reasoning": result.get("reasoning", "N/A"),
-            "expected_metrics": result.get("expected_metrics", "N/A"),
-        }
+        # Return the structured response directly
+        return response.output_parsed.model_dump()

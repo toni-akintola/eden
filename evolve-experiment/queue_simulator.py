@@ -1,7 +1,7 @@
 import random
 import math
 from collections import deque
-from typing import Dict, Deque, List, Union
+from typing import Dict, Deque
 
 # Import all necessary types from the local file
 from evolve_types import (
