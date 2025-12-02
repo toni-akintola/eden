@@ -26,6 +26,10 @@ def run_evolution(
     task: Optional[str],
     verbose: bool,
     output_file: Optional[str],
+    V_surplus: float = 10.0,
+    C_waiting_cost: float = 1.0,
+    R_provider_profit: float = 5.0,
+    alpha_weight: float = 0.5,
 ) -> dict:
     """
     Run the evolution loop to optimize queue model parameters.
@@ -87,7 +91,9 @@ def run_evolution(
             if verbose:
                 click.echo("Converting config to CheTercieuxQueueModel...")
 
-            model = convert_config_to_model(config)
+            model = convert_config_to_model(
+                config, V_surplus, C_waiting_cost, R_provider_profit, alpha_weight
+            )
 
             # 3. Run simulation
             if verbose:
@@ -265,7 +271,46 @@ def _generate_observations(
     default=None,
     help="Custom task description for the optimization",
 )
-def main(iterations, sim_time, models, output, quiet, task):
+@click.option(
+    "--v-surplus",
+    type=float,
+    default=10.0,
+    show_default=True,
+    help="Net surplus from service (V > 0)",
+)
+@click.option(
+    "--c-cost",
+    type=float,
+    default=1.0,
+    show_default=True,
+    help="Per-period waiting cost (C > 0)",
+)
+@click.option(
+    "--r-profit",
+    type=float,
+    default=5.0,
+    show_default=True,
+    help="Profit per served agent (R > 0)",
+)
+@click.option(
+    "--alpha",
+    type=float,
+    default=0.5,
+    show_default=True,
+    help="Weight on agents' welfare (alpha in [0, 1])",
+)
+def main(
+    iterations,
+    sim_time,
+    models,
+    output,
+    quiet,
+    task,
+    v_surplus,
+    c_cost,
+    r_profit,
+    alpha,
+):
     """
     Evolutionary optimizer for Che-Tercieux queue models.
 
@@ -319,6 +364,10 @@ def main(iterations, sim_time, models, output, quiet, task):
             task=task,
             verbose=not quiet,
             output_file=output,
+            V_surplus=v_surplus,
+            C_waiting_cost=c_cost,
+            R_provider_profit=r_profit,
+            alpha_weight=alpha,
         )
 
         # Always print final score
