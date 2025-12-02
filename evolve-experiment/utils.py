@@ -1,6 +1,7 @@
-from typing import Callable, List
+from typing import Callable, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from database import Organism
+from evolve_types import SimulationResults
 
 
 def parse_code_to_function(code_str: str) -> Callable:
@@ -40,6 +41,7 @@ def build_mutation_prompt(
     inspirations: List[Organism],
     arrival_rate: float,
     service_rate: float,
+    parent_simulation_results: Optional[SimulationResults] = None,
 ) -> str:
     """Build the prompt for mutating a parent organism."""
 
@@ -54,6 +56,30 @@ Organism {i} (fitness: {org.fitness:.4f}):
   queue_discipline: {org.queue_discipline}
 """
 
+    behavior_data = ""
+    if parent_simulation_results:
+        total_agents = (
+            parent_simulation_results.num_served
+            + parent_simulation_results.num_voluntary_abandonment
+            + parent_simulation_results.num_designer_exit
+        )
+        abandonment_rate = (
+            parent_simulation_results.num_voluntary_abandonment / total_agents
+            if total_agents > 0
+            else 0.0
+        )
+
+        behavior_data = f"""
+PARENT SIMULATION RESULTS (agent behavior data):
+  Expected queue length E[k]: {parent_simulation_results.expected_queue_length_E_k:.4f}
+  Expected service flow E[μ_k]: {parent_simulation_results.expected_service_flow_E_mu_k:.4f}
+  Total agents served: {parent_simulation_results.num_served}
+  Voluntary abandonments: {parent_simulation_results.num_voluntary_abandonment} ({abandonment_rate*100:.2f}% of total)
+  Designer-induced exits: {parent_simulation_results.num_designer_exit}
+  Average wait time (served agents): {parent_simulation_results.avg_wait_time_served:.4f}
+  Total simulation time: {parent_simulation_results.total_run_time:.2f}
+"""
+
     return f"""You are a genetic programming system that mutates queue control functions.
 
 FIXED EXOGENOUS PARAMETERS (do not change):
@@ -64,7 +90,7 @@ PARENT ORGANISM (generation {parent.generation}, fitness: {parent.fitness if par
   entry_rule_code: {parent.entry_rule_code}
   exit_rule_code: {parent.exit_rule_code}
   queue_discipline: {parent.queue_discipline}
-{inspiration_text}
+{behavior_data}{inspiration_text}
 MUTABLE PARAMETERS:
 - entry_rule_code: lambda k: <float>  (k = queue length, returns entry probability [0,1])
 - exit_rule_code: lambda k, l: (<float>, <float>)  (k = queue length, l = position, returns (exit_rate, exit_prob))

@@ -1,8 +1,9 @@
 import os
-from typing import List
+from typing import List, Optional
 from openai import OpenAI
 from database import Organism
 from utils import build_mutation_prompt, MutationResponse
+from evolve_types import SimulationResults
 
 
 class Mutator:
@@ -18,6 +19,7 @@ class Mutator:
         inspirations: List[Organism],
         arrival_rate: float,
         service_rate: float,
+        parent_simulation_results: Optional[SimulationResults] = None,
     ) -> Organism:
         """
         Mutate a parent organism to create a child.
@@ -27,11 +29,14 @@ class Mutator:
             inspirations: High-performing organisms for inspiration
             arrival_rate: Fixed exogenous arrival rate (lambda)
             service_rate: Fixed exogenous service rate (mu)
+            parent_simulation_results: Optional simulation results from parent evaluation
 
         Returns:
             A new child Organism with mutated entry/exit rules
         """
-        prompt = build_mutation_prompt(parent, inspirations, arrival_rate, service_rate)
+        prompt = build_mutation_prompt(
+            parent, inspirations, arrival_rate, service_rate, parent_simulation_results
+        )
 
         response = self.client.responses.parse(
             model=self.model,

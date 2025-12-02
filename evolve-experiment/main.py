@@ -129,8 +129,17 @@ def evaluate_organism(
     C_waiting_cost: float,
     R_provider_profit: float,
     alpha_weight: float,
-) -> float:
-    """Evaluate an organism and return its fitness score."""
+    return_results: bool = False,
+):
+    """
+    Evaluate an organism and return its fitness score.
+
+    Args:
+        return_results: If True, returns (fitness, results) tuple instead of just fitness
+
+    Returns:
+        fitness score, or (fitness, results) if return_results=True
+    """
     model = organism_to_model(
         organism,
         arrival_rate,
@@ -142,7 +151,11 @@ def evaluate_organism(
     )
     simulator = QueueSimulator(model)
     results = simulator.run_simulation(max_time=simulation_time)
-    return evaluate_designer_performance(model, results)
+    fitness = evaluate_designer_performance(model, results)
+
+    if return_results:
+        return fitness, results
+    return fitness
 
 
 def mutate_and_evaluate(
@@ -158,8 +171,30 @@ def mutate_and_evaluate(
     alpha_weight: float,
 ) -> Organism:
     """Mutate and evaluate a single organism."""
-    # Mutate to create child
-    child = mutator.mutate(parent, inspirations, arrival_rate, service_rate)
+    # Get parent's simulation results for behavior insights
+    parent_results = None
+    if parent.fitness is not None:
+        # Re-run parent simulation to get detailed results
+        parent_fitness, parent_results = evaluate_organism(
+            parent,
+            simulation_time,
+            arrival_rate,
+            service_rate,
+            V_surplus,
+            C_waiting_cost,
+            R_provider_profit,
+            alpha_weight,
+            return_results=True,
+        )
+
+    # Mutate to create child (with parent behavior data)
+    child = mutator.mutate(
+        parent,
+        inspirations,
+        arrival_rate,
+        service_rate,
+        parent_simulation_results=parent_results,
+    )
 
     # Evaluate child
     child.fitness = evaluate_organism(
