@@ -1,27 +1,120 @@
-from typing import List, Dict, Any
+from dataclasses import dataclass, field
+from typing import List, Optional
+import random
+import uuid
 
 
-class Attempt:
-    def __init__(self, attempt: Dict[str, Any], score: float, observations: str):
-        """
-        Represents an attempt with hyperparameters.
+@dataclass
+class Organism:
+    """Represents a program (set of queue functions) in the evolutionary population."""
 
-        Args:
-            attempt: Dictionary with hyperparameters (num_servers, service_rate, queue_discipline)
-            score: Efficiency score (lower is better)
-            observations: Human-readable feedback about the configuration
-        """
-        self.attempt = attempt
-        self.score = score
-        self.observations = observations
+    arrival_rate_code: str
+    service_rate_code: str
+    entry_rule_code: str
+    exit_rule_code: str
+    generation: int = 0
+    fitness: Optional[float] = None
+    parent_id: Optional[str] = None
+    id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
 
 
 class Database:
+    """Population database with fitness-weighted sampling."""
+
     def __init__(self):
-        self._data = []
+        self._organisms: List[Organism] = []
 
-    def add_attempt(self, attempt: Attempt):
-        self._data.append(attempt)
+    def add(self, organism: Organism):
+        """Add an organism to the population."""
+        self._organisms.append(organism)
 
-    def get_attempts(self) -> List[Attempt]:
-        return self._data
+    def sample(
+        self, fitness_weight: float = 0.7, recency_weight: float = 0.3
+    ) -> tuple[Organism, List[Organism]]:
+        """
+        Sample a parent organism and inspirations using weighted selection.
+
+        Args:
+            fitness_weight: Weight for fitness in selection (higher = prefer fitter)
+            recency_weight: Weight for recency in selection (higher = prefer newer)
+
+        Returns:
+            (parent, inspirations) tuple
+        """
+        if not self._organisms:
+            raise ValueError("Database is empty")
+
+        # Calculate weights for each organism
+        weights = self._calculate_weights(fitness_weight, recency_weight)
+
+        # Sample parent
+        parent = random.choices(self._organisms, weights=weights, k=1)[0]
+
+        # Get inspirations (top performers, excluding parent)
+        inspirations = self.get_inspirations(k=3, exclude_id=parent.id)
+
+        return parent, inspirations
+
+    def _calculate_weights(
+        self, fitness_weight: float, recency_weight: float
+    ) -> List[float]:
+        """Calculate sampling weights balancing fitness and recency."""
+        if len(self._organisms) == 1:
+            return [1.0]
+
+        # Get fitness scores (use 0 for None)
+        fitnesses = [
+            o.fitness if o.fitness is not None else 0.0 for o in self._organisms
+        ]
+        generations = [o.generation for o in self._organisms]
+
+        # Normalize fitness (handle case where all same)
+        min_f, max_f = min(fitnesses), max(fitnesses)
+        if max_f > min_f:
+            norm_fitness = [(f - min_f) / (max_f - min_f) for f in fitnesses]
+        else:
+            norm_fitness = [1.0] * len(fitnesses)
+
+        # Normalize generation (newer = higher)
+        min_g, max_g = min(generations), max(generations)
+        if max_g > min_g:
+            norm_recency = [(g - min_g) / (max_g - min_g) for g in generations]
+        else:
+            norm_recency = [1.0] * len(generations)
+
+        # Combine with weights, add small epsilon for diversity
+        weights = [
+            fitness_weight * f + recency_weight * r + 0.1
+            for f, r in zip(norm_fitness, norm_recency)
+        ]
+
+        return weights
+
+    def get_inspirations(
+        self, k: int = 3, exclude_id: Optional[str] = None
+    ) -> List[Organism]:
+        """Get top k organisms by fitness for inspiration."""
+        candidates = [
+            o for o in self._organisms if o.id != exclude_id and o.fitness is not None
+        ]
+        if not candidates:
+            return []
+
+        # Sort by fitness descending, take top k
+        sorted_candidates = sorted(
+            candidates, key=lambda o: o.fitness or 0, reverse=True
+        )
+        return sorted_candidates[:k]
+
+    def get_best(self) -> Optional[Organism]:
+        """Get the organism with highest fitness."""
+        evaluated = [o for o in self._organisms if o.fitness is not None]
+        if not evaluated:
+            return None
+        return max(evaluated, key=lambda o: o.fitness)
+
+    def size(self) -> int:
+        return len(self._organisms)
+
+    def all(self) -> List[Organism]:
+        return self._organisms.copy()
