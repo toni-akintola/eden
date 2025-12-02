@@ -128,7 +128,8 @@ class QueueSimulator:
                     served_agent = self.queue_agents.pop()
                 elif self.model.queue_discipline == QueueDiscipline.SIRO:
                     idx = random.randrange(len(self.queue_agents))
-                    served_agent = self.queue_agents.pop(idx)
+                    served_agent = self.queue_agents[idx]
+                    del self.queue_agents[idx]
 
                 self.num_served += 1
 
@@ -146,7 +147,7 @@ class QueueSimulator:
                         break
 
                 if removed_index != -1:
-                    self.queue_agents.pop(removed_index)
+                    del self.queue_agents[removed_index]
 
         # After loop, compile results and calculate expected values
         return self._calculate_final_results(self.current_time, self.time_spent_at_k)

@@ -15,12 +15,17 @@ from evolve_types import (
 
 class QueueConfigSchema(BaseModel):
     """Schema for queue model configuration returned by agents."""
-    model_config = ConfigDict(extra='forbid')
-    
+
+    model_config = ConfigDict(extra="forbid")
+
     V_surplus: float = Field(description="Net surplus V from service (V > 0)")
     C_waiting_cost: float = Field(description="Per-period waiting cost C (C > 0)")
-    R_provider_profit: float = Field(description="Profit R for each served agent (R > 0)")
-    alpha_weight: float = Field(description="Weight on agents' welfare (alpha in [0, 1])")
+    R_provider_profit: float = Field(
+        description="Profit R for each served agent (R > 0)"
+    )
+    alpha_weight: float = Field(
+        description="Weight on agents' welfare (alpha in [0, 1])"
+    )
     arrival_rate_fn: Union[float, dict[str, float]] = Field(
         description="Constant value or dict mapping queue_length -> arrival_rate"
     )
@@ -41,8 +46,8 @@ class QueueConfigSchema(BaseModel):
 
 
 class ExploreResponse(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    
+    model_config = ConfigDict(extra="forbid")
+
     analysis: str
     pattern_insights: str
     candidate_configs: list[QueueConfigSchema]
@@ -51,8 +56,8 @@ class ExploreResponse(BaseModel):
 
 
 class RefineResponse(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    
+    model_config = ConfigDict(extra="forbid")
+
     evaluation: str
     optimal_strategy: str
     recommended_config: QueueConfigSchema
@@ -62,8 +67,8 @@ class RefineResponse(BaseModel):
 
 
 class ActResponse(BaseModel):
-    model_config = ConfigDict(extra='forbid')
-    
+    model_config = ConfigDict(extra="forbid")
+
     final_config: QueueConfigSchema
     confidence_level: str
     reasoning: str
@@ -244,14 +249,16 @@ Respond in JSON format:
 }}"""
 
 
-def _value_or_dict_to_function(value_or_dict: Union[float, int, dict, None], default_value: float = 0.0) -> Callable[[int], float]:
+def _value_or_dict_to_function(
+    value_or_dict: Union[float, int, dict, None], default_value: float = 0.0
+) -> Callable[[int], float]:
     """
     Converts a constant value or dict to a function k -> value.
-    
+
     Args:
         value_or_dict: Either a constant (float/int) or dict mapping queue_length -> value
         default_value: Default value to return if None or missing key
-    
+
     Returns:
         A function that takes queue_length (int) and returns a float
     """
@@ -265,25 +272,28 @@ def _value_or_dict_to_function(value_or_dict: Union[float, int, dict, None], def
         # Dict mapping
         def lookup_fn(k: int) -> float:
             return float(value_or_dict.get(k, value_or_dict.get(str(k), default_value)))
+
         return lookup_fn
     else:
         return lambda k: default_value
 
 
-def _exit_dict_to_function(exit_dict: Union[dict, None]) -> Callable[[int, int], tuple[float, float]]:
+def _exit_dict_to_function(
+    exit_dict: Union[dict, None]
+) -> Callable[[int, int], tuple[float, float]]:
     """
     Converts an exit rule dict to a function (k, l) -> (rate_y, prob_z).
-    
+
     Args:
         exit_dict: Dict mapping "k,l" -> [rate_y, prob_z] or None
-    
+
     Returns:
         A function that takes (queue_length, position) and returns (rate_y, prob_z)
     """
     if exit_dict is None or not exit_dict:
         # No exits
         return lambda k, l: (0.0, 0.0)
-    
+
     def lookup_fn(k: int, l: int) -> tuple[float, float]:
         key = f"{k},{l}"
         if key in exit_dict:
@@ -291,17 +301,19 @@ def _exit_dict_to_function(exit_dict: Union[dict, None]) -> Callable[[int, int],
             if isinstance(val, (list, tuple)) and len(val) >= 2:
                 return (float(val[0]), float(val[1]))
         return (0.0, 0.0)
-    
+
     return lookup_fn
 
 
-def convert_config_to_model(config: Union[QueueConfigSchema, dict]) -> CheTercieuxQueueModel:
+def convert_config_to_model(
+    config: Union[QueueConfigSchema, dict]
+) -> CheTercieuxQueueModel:
     """
     Converts the agent's config to a CheTercieuxQueueModel.
-    
+
     Args:
         config: QueueConfigSchema or dictionary with model parameters and function specs
-    
+
     Returns:
         A fully constructed CheTercieuxQueueModel ready for simulation
     """
@@ -310,37 +322,39 @@ def convert_config_to_model(config: Union[QueueConfigSchema, dict]) -> CheTercie
         config_dict = config.model_dump()
     else:
         config_dict = config
-    
+
     # Parse rate functions
-    arrival_fn = _value_or_dict_to_function(config_dict.get("arrival_rate_fn"), default_value=1.0)
-    service_fn = _value_or_dict_to_function(config_dict.get("service_rate_fn"), default_value=1.0)
-    entry_fn = _value_or_dict_to_function(config_dict.get("entry_rule_fn"), default_value=1.0)
+    arrival_fn = _value_or_dict_to_function(
+        config_dict.get("arrival_rate_fn"), default_value=1.0
+    )
+    service_fn = _value_or_dict_to_function(
+        config_dict.get("service_rate_fn"), default_value=1.0
+    )
+    entry_fn = _value_or_dict_to_function(
+        config_dict.get("entry_rule_fn"), default_value=1.0
+    )
     exit_fn = _exit_dict_to_function(config_dict.get("exit_rule_fn"))
-    
+
     # Construct nested models
     primitive_process = PrimitiveProcess(
-        arrival_rate_fn=arrival_fn,
-        service_rate_fn=service_fn
+        arrival_rate_fn=arrival_fn, service_rate_fn=service_fn
     )
-    
-    design_rules = EntryExitRule(
-        entry_rule_fn=entry_fn,
-        exit_rule_fn=exit_fn
-    )
-    
+
+    design_rules = EntryExitRule(entry_rule_fn=entry_fn, exit_rule_fn=exit_fn)
+
     # Parse enums
     discipline_str = config_dict.get("queue_discipline", "FCFS")
     try:
         queue_discipline = QueueDiscipline[discipline_str]
     except (KeyError, TypeError):
         queue_discipline = QueueDiscipline.FCFS
-    
+
     info_str = config_dict.get("information_rule", "NO_INFORMATION_BEYOND_REC")
     try:
         information_rule = InformationRule[info_str]
     except (KeyError, TypeError):
         information_rule = InformationRule.NO_INFORMATION_BEYOND_REC
-    
+
     # Construct full model
     return CheTercieuxQueueModel(
         V_surplus=float(config_dict.get("V_surplus", 10.0)),
