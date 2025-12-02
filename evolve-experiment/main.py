@@ -105,6 +105,7 @@ def run_evolution(
         click.echo(f"Seed organism fitness: {seed.fitness:.4f}")
         click.echo(f"Starting evolution for {num_steps} steps...\n")
 
+    history = []
     for step in range(1, num_steps + 1):
         if verbose:
             click.echo(f"Step {step}/{num_steps}")
@@ -129,8 +130,16 @@ def run_evolution(
             # Add to database
             database.add(child)
 
+            best = database.get_best()
+            history.append(
+                {
+                    "step": step,
+                    "child_fitness": child.fitness,
+                    "best_fitness": best.fitness,
+                }
+            )
+
             if verbose:
-                best = database.get_best()
                 click.echo(
                     f"  Child fitness: {child.fitness:.4f}, Best: {best.fitness:.4f}"
                 )
@@ -155,6 +164,8 @@ def run_evolution(
             else None
         ),
         "population_size": database.size(),
+        "history": history,
+        "database": database,
     }
 
     if verbose:
@@ -166,8 +177,15 @@ def run_evolution(
         click.echo(f"  exit: {best.exit_rule_code}")
 
     if output_file:
+        # Create JSON-serializable version
+        json_results = {
+            "best_fitness": results["best_fitness"],
+            "best_organism": results["best_organism"],
+            "population_size": results["population_size"],
+            "history": results["history"],
+        }
         with open(output_file, "w") as f:
-            json.dump(results, f, indent=2)
+            json.dump(json_results, f, indent=2)
         if verbose:
             click.echo(f"\nResults saved to {output_file}")
 
@@ -204,13 +222,16 @@ def run_evolution(
 @click.option("--alpha", default=0.5, show_default=True, help="Alpha weight parameter")
 @click.option("-o", "--output", default=None, help="Output JSON file")
 @click.option("-q", "--quiet", is_flag=True, help="Quiet mode")
-def main(steps, sim_time, model, v_surplus, c_cost, r_profit, alpha, output, quiet):
+@click.option("--visualize", is_flag=True, help="Generate visualization plots")
+def main(
+    steps, sim_time, model, v_surplus, c_cost, r_profit, alpha, output, quiet, visualize
+):
     """Evolutionary optimizer for Che-Tercieux queue models."""
     if not os.getenv("OPENAI_API_KEY"):
         click.echo("Error: OPENAI_API_KEY not set", err=True)
         sys.exit(1)
 
-    run_evolution(
+    results = run_evolution(
         num_steps=steps,
         simulation_time=sim_time,
         model_name=model,
@@ -221,6 +242,25 @@ def main(steps, sim_time, model, v_surplus, c_cost, r_profit, alpha, output, qui
         verbose=not quiet,
         output_file=output,
     )
+
+    if visualize:
+        from visualize import (
+            plot_fitness_progression,
+            plot_population_stats,
+            visualize_functions,
+            create_summary_report,
+        )
+
+        history = results.get("history", [])
+        database = results.get("database")
+        best = database.get_best() if database else None
+
+        if history and database:
+            plot_fitness_progression(history, "fitness_progression.png")
+            plot_population_stats(database, "population_stats.png")
+            if best:
+                visualize_functions(best, output_file="best_organism.png")
+            create_summary_report(database, history, "evolution_report.txt")
 
 
 if __name__ == "__main__":
