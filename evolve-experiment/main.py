@@ -405,7 +405,7 @@ def run_evolution(
 @click.option(
     "-m",
     "--model",
-    default="gpt-5.1",
+    default="gpt-5.1-2025-11-13",
     show_default=True,
     help="LLM model for mutations",
 )

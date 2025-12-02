@@ -1,6 +1,6 @@
 import os
 from typing import List, Optional
-from openai import OpenAI
+from langfuse import openai
 from database import Organism
 from utils import build_mutation_prompt, MutationResponse
 from evolve_types import SimulationResults
@@ -9,9 +9,9 @@ from evolve_types import SimulationResults
 class Mutator:
     """LLM-based mutator for genetic programming."""
 
-    def __init__(self, model: str = "gpt-5.1"):
+    def __init__(self, model: str = "gpt-5.1-2025-11-13"):
         self.model = model
-        self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        self.client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     def mutate(
         self,

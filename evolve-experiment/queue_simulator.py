@@ -300,6 +300,10 @@ class QueueSimulator:
                     idx = random.randrange(len(self.queue_agents))
                     served_agent = self.queue_agents[idx]
                     del self.queue_agents[idx]
+                else:
+                    raise ValueError(
+                        f"Unknown queue discipline: {self.model.queue_discipline}"
+                    )
 
                 self.num_served += 1
                 self.total_wait_time_served += served_agent.time_in_queue
