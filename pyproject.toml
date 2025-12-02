@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "click>=8.3.0",
     "emergent>=0.1.0",
+    "langfuse>=3.10.3",
     "openai>=2.7.1",
     "pettingzoo>=1.25.0",
     "pygame>=2.6.1",
