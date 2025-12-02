@@ -21,14 +21,14 @@ from utils import parse_code_to_function
 
 def organism_to_model(
     organism: Organism,
+    arrival_rate: float,
+    service_rate: float,
     V_surplus: float,
     C_waiting_cost: float,
     R_provider_profit: float,
     alpha_weight: float,
 ) -> CheTercieuxQueueModel:
     """Convert an Organism's code to a CheTercieuxQueueModel."""
-    arrival_fn = parse_code_to_function(organism.arrival_rate_code)
-    service_fn = parse_code_to_function(organism.service_rate_code)
     entry_fn = parse_code_to_function(organism.entry_rule_code)
     exit_fn = parse_code_to_function(organism.exit_rule_code)
 
@@ -38,7 +38,8 @@ def organism_to_model(
         R_provider_profit=R_provider_profit,
         alpha_weight=alpha_weight,
         primitive_process=PrimitiveProcess(
-            arrival_rate_fn=arrival_fn, service_rate_fn=service_fn
+            arrival_rate_fn=lambda k: arrival_rate,
+            service_rate_fn=lambda k: service_rate,
         ),
         design_rules=EntryExitRule(entry_rule_fn=entry_fn, exit_rule_fn=exit_fn),
         queue_discipline=QueueDiscipline.FCFS,
@@ -49,8 +50,6 @@ def organism_to_model(
 def create_seed_organism() -> Organism:
     """Create a default seed organism to bootstrap evolution."""
     return Organism(
-        arrival_rate_code="lambda k: 2.0",
-        service_rate_code="lambda k: 3.0",
         entry_rule_code="lambda k: 1.0",
         exit_rule_code="lambda k, l: (0.0, 0.0)",
         generation=0,
@@ -60,6 +59,8 @@ def create_seed_organism() -> Organism:
 def evaluate_organism(
     organism: Organism,
     simulation_time: float,
+    arrival_rate: float,
+    service_rate: float,
     V_surplus: float,
     C_waiting_cost: float,
     R_provider_profit: float,
@@ -67,7 +68,13 @@ def evaluate_organism(
 ) -> float:
     """Evaluate an organism and return its fitness score."""
     model = organism_to_model(
-        organism, V_surplus, C_waiting_cost, R_provider_profit, alpha_weight
+        organism,
+        arrival_rate,
+        service_rate,
+        V_surplus,
+        C_waiting_cost,
+        R_provider_profit,
+        alpha_weight,
     )
     simulator = QueueSimulator(model)
     results = simulator.run_simulation(max_time=simulation_time)
@@ -78,6 +85,8 @@ def run_evolution(
     num_steps: int,
     simulation_time: float,
     model_name: str,
+    arrival_rate: float,
+    service_rate: float,
     V_surplus: float,
     C_waiting_cost: float,
     R_provider_profit: float,
@@ -94,6 +103,8 @@ def run_evolution(
     seed.fitness = evaluate_organism(
         seed,
         simulation_time,
+        arrival_rate,
+        service_rate,
         V_surplus,
         C_waiting_cost,
         R_provider_profit,
@@ -102,6 +113,7 @@ def run_evolution(
     database.add(seed)
 
     if verbose:
+        click.echo(f"Fixed parameters: lambda={arrival_rate}, mu={service_rate}")
         click.echo(f"Seed organism fitness: {seed.fitness:.4f}")
         click.echo(f"Starting evolution for {num_steps} steps...\n")
 
@@ -115,12 +127,14 @@ def run_evolution(
             parent, inspirations = database.sample()
 
             # Mutate to create child
-            child = mutator.mutate(parent, inspirations)
+            child = mutator.mutate(parent, inspirations, arrival_rate, service_rate)
 
             # Evaluate child
             child.fitness = evaluate_organism(
                 child,
                 simulation_time,
+                arrival_rate,
+                service_rate,
                 V_surplus,
                 C_waiting_cost,
                 R_provider_profit,
@@ -154,8 +168,6 @@ def run_evolution(
         "best_fitness": best.fitness if best else None,
         "best_organism": (
             {
-                "arrival_rate_code": best.arrival_rate_code,
-                "service_rate_code": best.service_rate_code,
                 "entry_rule_code": best.entry_rule_code,
                 "exit_rule_code": best.exit_rule_code,
                 "generation": best.generation,
@@ -171,13 +183,10 @@ def run_evolution(
     if verbose:
         click.echo(f"\nEvolution complete. Best fitness: {best.fitness:.4f}")
         click.echo(f"Best organism (gen {best.generation}):")
-        click.echo(f"  arrival: {best.arrival_rate_code}")
-        click.echo(f"  service: {best.service_rate_code}")
         click.echo(f"  entry: {best.entry_rule_code}")
         click.echo(f"  exit: {best.exit_rule_code}")
 
     if output_file:
-        # Create JSON-serializable version
         json_results = {
             "best_fitness": results["best_fitness"],
             "best_organism": results["best_organism"],
@@ -211,6 +220,20 @@ def run_evolution(
     help="LLM model for mutations",
 )
 @click.option(
+    "--lambda",
+    "arrival_rate",
+    default=2.0,
+    show_default=True,
+    help="Arrival rate (exogenous)",
+)
+@click.option(
+    "--mu",
+    "service_rate",
+    default=3.0,
+    show_default=True,
+    help="Service rate (exogenous)",
+)
+@click.option(
     "--v-surplus", default=10.0, show_default=True, help="V surplus parameter"
 )
 @click.option(
@@ -224,7 +247,18 @@ def run_evolution(
 @click.option("-q", "--quiet", is_flag=True, help="Quiet mode")
 @click.option("--visualize", is_flag=True, help="Generate visualization plots")
 def main(
-    steps, sim_time, model, v_surplus, c_cost, r_profit, alpha, output, quiet, visualize
+    steps,
+    sim_time,
+    model,
+    arrival_rate,
+    service_rate,
+    v_surplus,
+    c_cost,
+    r_profit,
+    alpha,
+    output,
+    quiet,
+    visualize,
 ):
     """Evolutionary optimizer for Che-Tercieux queue models."""
     if not os.getenv("OPENAI_API_KEY"):
@@ -235,6 +269,8 @@ def main(
         num_steps=steps,
         simulation_time=sim_time,
         model_name=model,
+        arrival_rate=arrival_rate,
+        service_rate=service_rate,
         V_surplus=v_surplus,
         C_waiting_cost=c_cost,
         R_provider_profit=r_profit,
@@ -247,19 +283,15 @@ def main(
         from visualize import (
             plot_fitness_progression,
             plot_population_stats,
-            visualize_functions,
             create_summary_report,
         )
 
         history = results.get("history", [])
         database = results.get("database")
-        best = database.get_best() if database else None
 
         if history and database:
             plot_fitness_progression(history, "fitness_progression.png")
             plot_population_stats(database, "population_stats.png")
-            if best:
-                visualize_functions(best, output_file="best_organism.png")
             create_summary_report(database, history, "evolution_report.txt")
 
 

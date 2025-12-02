@@ -6,10 +6,8 @@ import uuid
 
 @dataclass
 class Organism:
-    """Represents a program (set of queue functions) in the evolutionary population."""
+    """Represents a program (entry/exit rules) in the evolutionary population."""
 
-    arrival_rate_code: str
-    service_rate_code: str
     entry_rule_code: str
     exit_rule_code: str
     generation: int = 0
@@ -31,26 +29,12 @@ class Database:
     def sample(
         self, fitness_weight: float = 0.7, recency_weight: float = 0.3
     ) -> tuple[Organism, List[Organism]]:
-        """
-        Sample a parent organism and inspirations using weighted selection.
-
-        Args:
-            fitness_weight: Weight for fitness in selection (higher = prefer fitter)
-            recency_weight: Weight for recency in selection (higher = prefer newer)
-
-        Returns:
-            (parent, inspirations) tuple
-        """
+        """Sample a parent organism and inspirations using weighted selection."""
         if not self._organisms:
             raise ValueError("Database is empty")
 
-        # Calculate weights for each organism
         weights = self._calculate_weights(fitness_weight, recency_weight)
-
-        # Sample parent
         parent = random.choices(self._organisms, weights=weights, k=1)[0]
-
-        # Get inspirations (top performers, excluding parent)
         inspirations = self.get_inspirations(k=3, exclude_id=parent.id)
 
         return parent, inspirations
@@ -62,27 +46,23 @@ class Database:
         if len(self._organisms) == 1:
             return [1.0]
 
-        # Get fitness scores (use 0 for None)
         fitnesses = [
             o.fitness if o.fitness is not None else 0.0 for o in self._organisms
         ]
         generations = [o.generation for o in self._organisms]
 
-        # Normalize fitness (handle case where all same)
         min_f, max_f = min(fitnesses), max(fitnesses)
         if max_f > min_f:
             norm_fitness = [(f - min_f) / (max_f - min_f) for f in fitnesses]
         else:
             norm_fitness = [1.0] * len(fitnesses)
 
-        # Normalize generation (newer = higher)
         min_g, max_g = min(generations), max(generations)
         if max_g > min_g:
             norm_recency = [(g - min_g) / (max_g - min_g) for g in generations]
         else:
             norm_recency = [1.0] * len(generations)
 
-        # Combine with weights, add small epsilon for diversity
         weights = [
             fitness_weight * f + recency_weight * r + 0.1
             for f, r in zip(norm_fitness, norm_recency)
@@ -100,7 +80,6 @@ class Database:
         if not candidates:
             return []
 
-        # Sort by fitness descending, take top k
         sorted_candidates = sorted(
             candidates, key=lambda o: o.fitness or 0, reverse=True
         )
