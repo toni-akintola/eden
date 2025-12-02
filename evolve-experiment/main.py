@@ -4,6 +4,7 @@
 import os
 import sys
 import json
+import random
 import click
 from database import Database, Organism
 from ensemble import Mutator
@@ -32,6 +33,16 @@ def organism_to_model(
     entry_fn = parse_code_to_function(organism.entry_rule_code)
     exit_fn = parse_code_to_function(organism.exit_rule_code)
 
+    # Parse queue discipline string to enum
+    discipline_map = {
+        "FCFS": QueueDiscipline.FCFS,
+        "LIFO": QueueDiscipline.LIFO,
+        "SIRO": QueueDiscipline.SIRO,
+    }
+    queue_discipline = discipline_map.get(
+        organism.queue_discipline.upper(), QueueDiscipline.FCFS
+    )
+
     return CheTercieuxQueueModel(
         V_surplus=V_surplus,
         C_waiting_cost=C_waiting_cost,
@@ -42,16 +53,67 @@ def organism_to_model(
             service_rate_fn=lambda k: service_rate,
         ),
         design_rules=EntryExitRule(entry_rule_fn=entry_fn, exit_rule_fn=exit_fn),
-        queue_discipline=QueueDiscipline.FCFS,
+        queue_discipline=queue_discipline,
         information_rule=InformationRule.NO_INFORMATION_BEYOND_REC,
     )
 
 
-def create_seed_organism() -> Organism:
-    """Create a default seed organism to bootstrap evolution."""
+def generate_random_entry_rule() -> str:
+    """Generate a random entry rule function."""
+    rule_type = random.choice(["constant", "linear_decrease", "threshold", "inverse"])
+
+    if rule_type == "constant":
+        prob = random.uniform(0.1, 1.0)
+        return f"lambda k: {prob:.3f}"
+    elif rule_type == "linear_decrease":
+        start = random.uniform(0.5, 1.0)
+        slope = random.uniform(-0.1, -0.01)
+        return f"lambda k: max(0.0, min(1.0, {start:.3f} + {slope:.3f} * k))"
+    elif rule_type == "threshold":
+        threshold = random.randint(1, 10)
+        prob_above = random.uniform(0.0, 0.5)
+        prob_below = random.uniform(0.5, 1.0)
+        return f"lambda k: {prob_below:.3f} if k < {threshold} else {prob_above:.3f}"
+    else:  # inverse
+        base = random.uniform(0.3, 0.9)
+        factor = random.uniform(0.1, 0.5)
+        return f"lambda k: max(0.0, min(1.0, {base:.3f} / (1.0 + {factor:.3f} * k)))"
+
+
+def generate_random_exit_rule() -> str:
+    """Generate a random exit rule function."""
+    rule_type = random.choice(
+        ["no_exit", "position_based", "queue_length_based", "constant_rate"]
+    )
+
+    if rule_type == "no_exit":
+        return "lambda k, l: (0.0, 0.0)"
+    elif rule_type == "position_based":
+        rate = random.uniform(0.1, 2.0)
+        prob = random.uniform(0.1, 0.5)
+        return f"lambda k, l: ({rate:.3f}, {prob:.3f}) if l > {random.randint(2, 5)} else (0.0, 0.0)"
+    elif rule_type == "queue_length_based":
+        threshold = random.randint(3, 8)
+        rate = random.uniform(0.1, 1.5)
+        prob = random.uniform(0.1, 0.4)
+        return (
+            f"lambda k, l: ({rate:.3f}, {prob:.3f}) if k > {threshold} else (0.0, 0.0)"
+        )
+    else:  # constant_rate
+        rate = random.uniform(0.05, 1.0)
+        prob = random.uniform(0.05, 0.3)
+        return f"lambda k, l: ({rate:.3f}, {prob:.3f})"
+
+
+def create_seed_organism(random_seed: int = 42) -> Organism:
+    """Create a randomly generated seed organism to bootstrap evolution."""
+    # Set seed for reproducibility
+    random.seed(random_seed)
+
     return Organism(
-        entry_rule_code="lambda k: 1.0",
-        exit_rule_code="lambda k, l: (0.0, 0.0)",
+        entry_rule_code=generate_random_entry_rule(),
+        exit_rule_code=generate_random_exit_rule(),
+        queue_discipline=random.choice(["FCFS", "LIFO", "SIRO"]),
         generation=0,
     )
 
@@ -91,15 +153,19 @@ def run_evolution(
     C_waiting_cost: float,
     R_provider_profit: float,
     alpha_weight: float,
+    random_seed: int,
     verbose: bool,
     output_file: str | None,
 ) -> dict:
     """Run the evolutionary optimization loop."""
+    # Set random seed for reproducibility
+    random.seed(random_seed)
+
     database = Database()
     mutator = Mutator(model=model_name)
 
-    # Seed the database
-    seed = create_seed_organism()
+    # Seed the database with randomly generated organism
+    seed = create_seed_organism(random_seed)
     seed.fitness = evaluate_organism(
         seed,
         simulation_time,
@@ -113,7 +179,12 @@ def run_evolution(
     database.add(seed)
 
     if verbose:
+        click.echo(f"Random seed: {random_seed}")
         click.echo(f"Fixed parameters: lambda={arrival_rate}, mu={service_rate}")
+        click.echo(f"Seed organism:")
+        click.echo(f"  entry: {seed.entry_rule_code}")
+        click.echo(f"  exit: {seed.exit_rule_code}")
+        click.echo(f"  queue_discipline: {seed.queue_discipline}")
         click.echo(f"Seed organism fitness: {seed.fitness:.4f}")
         click.echo(f"Starting evolution for {num_steps} steps...\n")
 
@@ -170,6 +241,7 @@ def run_evolution(
             {
                 "entry_rule_code": best.entry_rule_code,
                 "exit_rule_code": best.exit_rule_code,
+                "queue_discipline": best.queue_discipline,
                 "generation": best.generation,
             }
             if best
@@ -181,10 +253,14 @@ def run_evolution(
     }
 
     if verbose:
-        click.echo(f"\nEvolution complete. Best fitness: {best.fitness:.4f}")
-        click.echo(f"Best organism (gen {best.generation}):")
-        click.echo(f"  entry: {best.entry_rule_code}")
-        click.echo(f"  exit: {best.exit_rule_code}")
+        if best:
+            click.echo(f"\nEvolution complete. Best fitness: {best.fitness:.4f}")
+            click.echo(f"Best organism (gen {best.generation}):")
+            click.echo(f"  entry: {best.entry_rule_code}")
+            click.echo(f"  exit: {best.exit_rule_code}")
+            click.echo(f"  queue_discipline: {best.queue_discipline}")
+        else:
+            click.echo("\nEvolution complete. No organisms evaluated.")
 
     if output_file:
         json_results = {
@@ -243,6 +319,13 @@ def run_evolution(
     "--r-profit", default=5.0, show_default=True, help="R provider profit parameter"
 )
 @click.option("--alpha", default=0.5, show_default=True, help="Alpha weight parameter")
+@click.option(
+    "--seed",
+    default=42,
+    show_default=True,
+    help="Random seed for reproducibility",
+    type=int,
+)
 @click.option("-o", "--output", default=None, help="Output JSON file")
 @click.option("-q", "--quiet", is_flag=True, help="Quiet mode")
 @click.option("--visualize", is_flag=True, help="Generate visualization plots")
@@ -256,6 +339,7 @@ def main(
     c_cost,
     r_profit,
     alpha,
+    seed,
     output,
     quiet,
     visualize,
@@ -275,6 +359,7 @@ def main(
         C_waiting_cost=c_cost,
         R_provider_profit=r_profit,
         alpha_weight=alpha,
+        random_seed=seed,
         verbose=not quiet,
         output_file=output,
     )

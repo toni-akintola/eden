@@ -117,21 +117,25 @@ def plot_population_stats(database, output_file: str = None):
 
 
 def visualize_functions(
-    organism: Organism, k_range: range = range(0, 20), output_file: str = None
+    organism: Organism,
+    arrival_rate: float = None,
+    service_rate: float = None,
+    k_range: range = range(0, 20),
+    output_file: str = None,
 ):
     """
     Visualize the actual function behavior by plotting them over queue lengths.
 
     Args:
         organism: Organism to visualize
+        arrival_rate: Fixed exogenous arrival rate (lambda)
+        service_rate: Fixed exogenous service rate (mu)
         k_range: Range of queue lengths to plot
         output_file: Optional file to save plot
     """
     from utils import parse_code_to_function
 
     try:
-        arrival_fn = parse_code_to_function(organism.arrival_rate_code)
-        service_fn = parse_code_to_function(organism.service_rate_code)
         entry_fn = parse_code_to_function(organism.entry_rule_code)
         exit_fn = parse_code_to_function(organism.exit_rule_code)
     except Exception as e:
@@ -139,31 +143,44 @@ def visualize_functions(
         return
 
     k_vals = list(k_range)
-    arrival_vals = [arrival_fn(k) for k in k_vals]
-    service_vals = [service_fn(k) for k in k_vals]
     entry_vals = [entry_fn(k) for k in k_vals]
 
+    # Create 2x2 subplot layout
     fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-    # Arrival rate
-    axes[0, 0].plot(k_vals, arrival_vals, "b-o", markersize=4)
-    axes[0, 0].set_xlabel("Queue Length (k)")
-    axes[0, 0].set_ylabel("Arrival Rate")
-    axes[0, 0].set_title(f"Arrival Rate\n{organism.arrival_rate_code[:50]}...")
-    axes[0, 0].grid(True, alpha=0.3)
+    # Arrival rate (fixed exogenous, shown as constant)
+    if arrival_rate is not None:
+        axes[0, 0].axhline(
+            y=arrival_rate, color="b", linewidth=2, label=f"λ = {arrival_rate}"
+        )
+        axes[0, 0].set_xlabel("Queue Length (k)")
+        axes[0, 0].set_ylabel("Arrival Rate")
+        axes[0, 0].set_title(f"Arrival Rate (Fixed Exogenous)\nλ = {arrival_rate}")
+        axes[0, 0].legend()
+        axes[0, 0].grid(True, alpha=0.3)
+    else:
+        axes[0, 0].text(0.5, 0.5, "Arrival rate not provided", ha="center", va="center")
+        axes[0, 0].set_title("Arrival Rate")
 
-    # Service rate
-    axes[0, 1].plot(k_vals, service_vals, "g-o", markersize=4)
-    axes[0, 1].set_xlabel("Queue Length (k)")
-    axes[0, 1].set_ylabel("Service Rate")
-    axes[0, 1].set_title(f"Service Rate\n{organism.service_rate_code[:50]}...")
-    axes[0, 1].grid(True, alpha=0.3)
+    # Service rate (fixed exogenous, shown as constant)
+    if service_rate is not None:
+        axes[0, 1].axhline(
+            y=service_rate, color="g", linewidth=2, label=f"μ = {service_rate}"
+        )
+        axes[0, 1].set_xlabel("Queue Length (k)")
+        axes[0, 1].set_ylabel("Service Rate")
+        axes[0, 1].set_title(f"Service Rate (Fixed Exogenous)\nμ = {service_rate}")
+        axes[0, 1].legend()
+        axes[0, 1].grid(True, alpha=0.3)
+    else:
+        axes[0, 1].text(0.5, 0.5, "Service rate not provided", ha="center", va="center")
+        axes[0, 1].set_title("Service Rate")
 
     # Entry rule
     axes[1, 0].plot(k_vals, entry_vals, "r-o", markersize=4)
     axes[1, 0].set_xlabel("Queue Length (k)")
     axes[1, 0].set_ylabel("Entry Probability")
-    axes[1, 0].set_title(f"Entry Rule\n{organism.entry_rule_code[:50]}...")
+    axes[1, 0].set_title(f"Entry Rule\n{organism.entry_rule_code[:60]}...")
     axes[1, 0].set_ylim([0, 1.1])
     axes[1, 0].grid(True, alpha=0.3)
 
@@ -178,11 +195,11 @@ def visualize_functions(
     axes[1, 1].set_xlabel("Position (l) at k=10")
     axes[1, 1].set_ylabel("Exit Rate", color="m")
     ax_twin.set_ylabel("Exit Probability", color="c")
-    axes[1, 1].set_title(f"Exit Rule (at k=10)\n{organism.exit_rule_code[:50]}...")
+    axes[1, 1].set_title(f"Exit Rule (at k=10)\n{organism.exit_rule_code[:60]}...")
     axes[1, 1].grid(True, alpha=0.3)
 
     plt.suptitle(
-        f"Organism Functions (Fitness: {organism.fitness:.4f}, Gen: {organism.generation})",
+        f"Organism Functions (Fitness: {organism.fitness:.4f if organism.fitness else 'N/A'}, Gen: {organism.generation}, Discipline: {organism.queue_discipline})",
         fontsize=14,
         y=0.995,
     )
@@ -207,14 +224,13 @@ EVOLUTION SUMMARY REPORT
 {'='*60}
 Total Steps: {len(history)}
 Population Size: {database.size()}
-Best Fitness: {best.fitness:.4f}
+Best Fitness: {best.fitness:.4f if best.fitness else 'N/A'}
 Best Generation: {best.generation}
 
 BEST ORGANISM:
-  Arrival Rate: {best.arrival_rate_code}
-  Service Rate: {best.service_rate_code}
   Entry Rule: {best.entry_rule_code}
   Exit Rule: {best.exit_rule_code}
+  Queue Discipline: {best.queue_discipline}
 
 FITNESS STATISTICS:
   Mean: {np.mean([h['child_fitness'] for h in history]):.4f}

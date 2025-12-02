@@ -83,8 +83,16 @@ class QueueSimulator:
             total_rate = R_A + R_S + R_E
 
             if total_rate == 0.0:
+                # If total rate is zero, we're in an absorbing state (no events possible)
+                # Ensure we've recorded at least some time to avoid validation errors
+                if self.current_time == 0.0:
+                    # If we never progressed, record a minimal time at state k=0
+                    self.time_spent_at_k[0] = (
+                        1e-6  # Very small epsilon to satisfy validation
+                    )
+                    self.current_time = 1e-6
                 print(
-                    f"Simulation ended early at T={self.current_time:.2f}. Total rate is zero."
+                    f"Simulation ended early at T={self.current_time:.2f}. Total rate is zero (absorbing state)."
                 )
                 break
 

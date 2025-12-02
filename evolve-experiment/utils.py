@@ -1,5 +1,5 @@
 from typing import Callable, List
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from database import Organism
 
 
@@ -28,6 +28,10 @@ class MutationResponse(BaseModel):
 
     entry_rule_code: str
     exit_rule_code: str
+    queue_discipline: str = Field(
+        description="Queue discipline: FCFS, LIFO, or SIRO",
+        pattern="^(FCFS|LIFO|SIRO)$",
+    )
     mutation_reasoning: str
 
 
@@ -47,6 +51,7 @@ def build_mutation_prompt(
 Organism {i} (fitness: {org.fitness:.4f}):
   entry_rule_code: {org.entry_rule_code}
   exit_rule_code: {org.exit_rule_code}
+  queue_discipline: {org.queue_discipline}
 """
 
     return f"""You are a genetic programming system that mutates queue control functions.
@@ -58,19 +63,28 @@ FIXED EXOGENOUS PARAMETERS (do not change):
 PARENT ORGANISM (generation {parent.generation}, fitness: {parent.fitness if parent.fitness else 'not evaluated'}):
   entry_rule_code: {parent.entry_rule_code}
   exit_rule_code: {parent.exit_rule_code}
+  queue_discipline: {parent.queue_discipline}
 {inspiration_text}
-FUNCTION SIGNATURES (what you can mutate):
+MUTABLE PARAMETERS:
 - entry_rule_code: lambda k: <float>  (k = queue length, returns entry probability [0,1])
 - exit_rule_code: lambda k, l: (<float>, <float>)  (k = queue length, l = position, returns (exit_rate, exit_prob))
+- queue_discipline: One of "FCFS" (First Come First Serve), "LIFO" (Last In First Out), or "SIRO" (Service In Random Order)
+
+QUEUE DISCIPLINE OPTIONS:
+- FCFS: Agents are served in order of arrival (fair, predictable)
+- LIFO: Most recently arrived agents are served first (can reduce waiting for new arrivals)
+- SIRO: Agents are selected randomly for service (unpredictable, can reduce strategic behavior)
 
 MUTATION GUIDELINES:
 - Make small, targeted changes to improve fitness
 - Can adjust constants, add/remove conditions, change mathematical relationships
+- Can change queue discipline if it might improve performance
 - Learn from high-performing inspirations but don't copy exactly
 - Ensure functions are valid Python lambda expressions
 - Entry rule should return probability in [0, 1]
 - Exit rule returns (0.0, 0.0) for no exits, or (rate, probability) for designer-induced exits
+- Queue discipline must be exactly "FCFS", "LIFO", or "SIRO"
 
-OBJECTIVE: Maximize welfare score W (higher is better) by optimizing entry/exit policies.
+OBJECTIVE: Maximize welfare score W (higher is better) by optimizing entry/exit policies and queue discipline.
 
-Output the complete mutated functions."""
+Output the complete mutated functions and queue discipline."""

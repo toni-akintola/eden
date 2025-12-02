@@ -6,10 +6,11 @@ import uuid
 
 @dataclass
 class Organism:
-    """Represents a program (entry/exit rules) in the evolutionary population."""
+    """Represents a program (entry/exit rules and queue discipline) in the evolutionary population."""
 
     entry_rule_code: str
     exit_rule_code: str
+    queue_discipline: str  # "FCFS", "LIFO", or "SIRO"
     generation: int = 0
     fitness: Optional[float] = None
     parent_id: Optional[str] = None
