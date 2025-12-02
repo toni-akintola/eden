@@ -8,8 +8,9 @@ from utils import (
     RefineResponse,
     ActResponse,
 )
-from database import Database
+from database import Attempt, Database
 from openai import OpenAI
+import json
 
 
 class Ensemble:
@@ -77,5 +78,6 @@ class Ensemble:
             ],
             text_format=ActResponse,
         )
-        # Return the structured response directly
-        return response.output_parsed.model_dump()
+        result = response.output_parsed.model_dump()
+        # Return the structured response
+        return result
