@@ -11,33 +11,64 @@ def plot_fitness_progression(history: List[dict], output_file: str = None):
     Plot fitness progression over evolution steps.
 
     Args:
-        history: List of dicts with 'step', 'child_fitness', 'best_fitness'
+        history: List of dicts with 'step', 'avg_child_fitness', 'best_child_fitness', 'best_fitness'
         output_file: Optional file to save plot
     """
     if not history:
         return
 
     steps = [h["step"] for h in history]
-    child_fitness = [h["child_fitness"] for h in history]
-    best_fitness = [h["best_fitness"] for h in history]
+    avg_child_fitness = [h.get("avg_child_fitness", 0.0) for h in history]
+    best_child_fitness = [h.get("best_child_fitness") for h in history]
+    best_fitness = [h.get("best_fitness") for h in history]
 
     plt.figure(figsize=(10, 6))
-    plt.plot(steps, child_fitness, "o-", alpha=0.5, label="Child Fitness", markersize=4)
-    plt.plot(steps, best_fitness, "s-", linewidth=2, label="Best Fitness", markersize=6)
+    if any(f is not None for f in avg_child_fitness):
+        plt.plot(
+            steps,
+            avg_child_fitness,
+            "o-",
+            alpha=0.5,
+            label="Avg Child Fitness",
+            markersize=4,
+        )
+    if any(f is not None for f in best_child_fitness):
+        plt.plot(
+            steps,
+            best_child_fitness,
+            "^-",
+            alpha=0.6,
+            label="Best Child Fitness",
+            markersize=4,
+        )
+    if any(f is not None for f in best_fitness):
+        plt.plot(
+            steps,
+            best_fitness,
+            "s-",
+            linewidth=2,
+            label="Overall Best Fitness",
+            markersize=6,
+        )
 
     # Highlight improvements
-    improvements = [
-        i for i in range(1, len(steps)) if best_fitness[i] > best_fitness[i - 1]
-    ]
-    if improvements:
-        plt.scatter(
-            [steps[i] for i in improvements],
-            [best_fitness[i] for i in improvements],
-            color="green",
-            s=100,
-            zorder=5,
-            label="Improvements",
-        )
+    if any(f is not None for f in best_fitness):
+        improvements = [
+            i
+            for i in range(1, len(steps))
+            if best_fitness[i] is not None
+            and best_fitness[i - 1] is not None
+            and best_fitness[i] > best_fitness[i - 1]
+        ]
+        if improvements:
+            plt.scatter(
+                [steps[i] for i in improvements],
+                [best_fitness[i] for i in improvements],
+                color="green",
+                s=100,
+                zorder=5,
+                label="Improvements",
+            )
 
     plt.xlabel("Evolution Step")
     plt.ylabel("Fitness Score")
@@ -233,12 +264,11 @@ BEST ORGANISM:
   Queue Discipline: {best.queue_discipline}
 
 FITNESS STATISTICS:
-  Mean: {np.mean([h['child_fitness'] for h in history]):.4f}
-  Std: {np.std([h['child_fitness'] for h in history]):.4f}
-  Min: {min([h['child_fitness'] for h in history]):.4f}
-  Max: {max([h['child_fitness'] for h in history]):.4f}
+  Mean Avg Child: {np.mean([h.get('avg_child_fitness', 0.0) for h in history]):.4f}
+  Mean Best Child: {np.mean([h.get('best_child_fitness', 0.0) or 0.0 for h in history]):.4f}
+  Final Best: {max([h.get('best_fitness', 0.0) or 0.0 for h in history]):.4f}
   
-IMPROVEMENTS: {len([i for i in range(1, len(history)) if history[i]['best_fitness'] > history[i-1]['best_fitness']])} steps
+IMPROVEMENTS: {len([i for i in range(1, len(history)) if history[i].get('best_fitness') and history[i-1].get('best_fitness') and history[i]['best_fitness'] > history[i-1]['best_fitness']])} steps
 """
 
     print(report)

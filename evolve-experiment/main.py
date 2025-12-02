@@ -5,6 +5,8 @@ import os
 import sys
 import json
 import random
+from concurrent.futures import ThreadPoolExecutor
+from typing import List
 import click
 from database import Database, Organism
 from ensemble import Mutator
@@ -143,6 +145,37 @@ def evaluate_organism(
     return evaluate_designer_performance(model, results)
 
 
+def mutate_and_evaluate(
+    parent: Organism,
+    inspirations: List[Organism],
+    mutator: Mutator,
+    simulation_time: float,
+    arrival_rate: float,
+    service_rate: float,
+    V_surplus: float,
+    C_waiting_cost: float,
+    R_provider_profit: float,
+    alpha_weight: float,
+) -> Organism:
+    """Mutate and evaluate a single organism."""
+    # Mutate to create child
+    child = mutator.mutate(parent, inspirations, arrival_rate, service_rate)
+
+    # Evaluate child
+    child.fitness = evaluate_organism(
+        child,
+        simulation_time,
+        arrival_rate,
+        service_rate,
+        V_surplus,
+        C_waiting_cost,
+        R_provider_profit,
+        alpha_weight,
+    )
+
+    return child
+
+
 def run_evolution(
     num_steps: int,
     simulation_time: float,
@@ -154,10 +187,11 @@ def run_evolution(
     R_provider_profit: float,
     alpha_weight: float,
     random_seed: int,
+    num_workers: int,
     verbose: bool,
     output_file: str | None,
 ) -> dict:
-    """Run the evolutionary optimization loop."""
+    """Run the evolutionary optimization loop with parallel workers."""
     # Set random seed for reproducibility
     random.seed(random_seed)
 
@@ -180,6 +214,7 @@ def run_evolution(
 
     if verbose:
         click.echo(f"Random seed: {random_seed}")
+        click.echo(f"Workers: {num_workers}")
         click.echo(f"Fixed parameters: lambda={arrival_rate}, mu={service_rate}")
         click.echo(f"Seed organism:")
         click.echo(f"  entry: {seed.entry_rule_code}")
@@ -189,48 +224,92 @@ def run_evolution(
         click.echo(f"Starting evolution for {num_steps} steps...\n")
 
     history = []
+
+    # Synchronized batch evolution: each step runs all workers in parallel
     for step in range(1, num_steps + 1):
         if verbose:
             click.echo(f"Step {step}/{num_steps}")
 
         try:
-            # Sample parent and inspirations
-            parent, inspirations = database.sample()
+            # Sample parents for all workers (synchronized - all from same DB state)
+            parent_inspiration_pairs = []
+            for _ in range(num_workers):
+                parent, inspirations = database.sample()
+                parent_inspiration_pairs.append((parent, inspirations))
 
-            # Mutate to create child
-            child = mutator.mutate(parent, inspirations, arrival_rate, service_rate)
+            # Run all mutations and evaluations in parallel
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = [
+                    executor.submit(
+                        mutate_and_evaluate,
+                        parent=parent,
+                        inspirations=inspirations,
+                        mutator=mutator,
+                        simulation_time=simulation_time,
+                        arrival_rate=arrival_rate,
+                        service_rate=service_rate,
+                        V_surplus=V_surplus,
+                        C_waiting_cost=C_waiting_cost,
+                        R_provider_profit=R_provider_profit,
+                        alpha_weight=alpha_weight,
+                    )
+                    for parent, inspirations in parent_inspiration_pairs
+                ]
+                children = []
+                for f in futures:
+                    try:
+                        child = f.result()
+                        children.append(child)
+                    except Exception as e:
+                        if verbose:
+                            click.echo(f"  Error in worker: {e}", err=True)
 
-            # Evaluate child
-            child.fitness = evaluate_organism(
-                child,
-                simulation_time,
-                arrival_rate,
-                service_rate,
-                V_surplus,
-                C_waiting_cost,
-                R_provider_profit,
-                alpha_weight,
-            )
+            # Aggregate: add all children to database
+            for child in children:
+                database.add(child)
 
-            # Add to database
-            database.add(child)
-
+            # Record step results
             best = database.get_best()
-            history.append(
-                {
-                    "step": step,
-                    "child_fitness": child.fitness,
-                    "best_fitness": best.fitness,
-                }
-            )
+            if children:
+                # Calculate statistics for this step
+                child_fitnesses = [c.fitness for c in children if c.fitness is not None]
+                avg_fitness = (
+                    sum(child_fitnesses) / len(child_fitnesses)
+                    if child_fitnesses
+                    else 0.0
+                )
+                best_child_fitness = max(child_fitnesses) if child_fitnesses else None
 
-            if verbose:
-                click.echo(
-                    f"  Child fitness: {child.fitness:.4f}, Best: {best.fitness:.4f}"
+                history.append(
+                    {
+                        "step": step,
+                        "num_children": len(children),
+                        "avg_child_fitness": avg_fitness,
+                        "best_child_fitness": best_child_fitness,
+                        "best_fitness": best.fitness if best else None,
+                    }
                 )
 
+                if verbose:
+                    best_child_str = (
+                        f"{best_child_fitness:.4f}"
+                        if best_child_fitness is not None
+                        else "N/A"
+                    )
+                    best_overall_str = (
+                        f"{best.fitness:.4f}"
+                        if best and best.fitness is not None
+                        else "N/A"
+                    )
+                    click.echo(
+                        f"  {len(children)} children evaluated, "
+                        f"avg={avg_fitness:.4f}, "
+                        f"best_child={best_child_str}, "
+                        f"overall_best={best_overall_str}"
+                    )
+
         except Exception as e:
-            click.echo(f"  Error: {e}", err=True)
+            click.echo(f"  Error in step {step}: {e}", err=True)
             continue
 
     # Get best organism
@@ -267,7 +346,7 @@ def run_evolution(
             "best_fitness": results["best_fitness"],
             "best_organism": results["best_organism"],
             "population_size": results["population_size"],
-            "history": results["history"],
+            "history": history,
         }
         with open(output_file, "w") as f:
             json.dump(json_results, f, indent=2)
@@ -294,6 +373,13 @@ def run_evolution(
     default="gpt-5.1",
     show_default=True,
     help="LLM model for mutations",
+)
+@click.option(
+    "-w",
+    "--workers",
+    default=1,
+    show_default=True,
+    help="Number of parallel workers",
 )
 @click.option(
     "--lambda",
@@ -333,6 +419,7 @@ def main(
     steps,
     sim_time,
     model,
+    workers,
     arrival_rate,
     service_rate,
     v_surplus,
@@ -360,6 +447,7 @@ def main(
         R_provider_profit=r_profit,
         alpha_weight=alpha,
         random_seed=seed,
+        num_workers=workers,
         verbose=not quiet,
         output_file=output,
     )

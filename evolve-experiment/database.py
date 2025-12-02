@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 import random
 import uuid
+import threading
 
 
 @dataclass
@@ -18,32 +19,35 @@ class Organism:
 
 
 class Database:
-    """Population database with fitness-weighted sampling."""
+    """Thread-safe population database with fitness-weighted sampling."""
 
     def __init__(self):
         self._organisms: List[Organism] = []
+        self._lock = threading.Lock()
 
     def add(self, organism: Organism):
-        """Add an organism to the population."""
-        self._organisms.append(organism)
+        """Add an organism to the population (thread-safe)."""
+        with self._lock:
+            self._organisms.append(organism)
 
     def sample(
         self, fitness_weight: float = 0.7, recency_weight: float = 0.3
     ) -> tuple[Organism, List[Organism]]:
-        """Sample a parent organism and inspirations using weighted selection."""
-        if not self._organisms:
-            raise ValueError("Database is empty")
+        """Sample a parent organism and inspirations using weighted selection (thread-safe)."""
+        with self._lock:
+            if not self._organisms:
+                raise ValueError("Database is empty")
 
-        weights = self._calculate_weights(fitness_weight, recency_weight)
-        parent = random.choices(self._organisms, weights=weights, k=1)[0]
-        inspirations = self.get_inspirations(k=3, exclude_id=parent.id)
+            weights = self._calculate_weights(fitness_weight, recency_weight)
+            parent = random.choices(self._organisms, weights=weights, k=1)[0]
+            inspirations = self._get_inspirations_unlocked(k=3, exclude_id=parent.id)
 
-        return parent, inspirations
+            return parent, inspirations
 
     def _calculate_weights(
         self, fitness_weight: float, recency_weight: float
     ) -> List[float]:
-        """Calculate sampling weights balancing fitness and recency."""
+        """Calculate sampling weights balancing fitness and recency (assumes lock held)."""
         if len(self._organisms) == 1:
             return [1.0]
 
@@ -71,10 +75,10 @@ class Database:
 
         return weights
 
-    def get_inspirations(
+    def _get_inspirations_unlocked(
         self, k: int = 3, exclude_id: Optional[str] = None
     ) -> List[Organism]:
-        """Get top k organisms by fitness for inspiration."""
+        """Get top k organisms by fitness for inspiration (assumes lock held)."""
         candidates = [
             o for o in self._organisms if o.id != exclude_id and o.fitness is not None
         ]
@@ -86,15 +90,27 @@ class Database:
         )
         return sorted_candidates[:k]
 
+    def get_inspirations(
+        self, k: int = 3, exclude_id: Optional[str] = None
+    ) -> List[Organism]:
+        """Get top k organisms by fitness for inspiration (thread-safe)."""
+        with self._lock:
+            return self._get_inspirations_unlocked(k, exclude_id)
+
     def get_best(self) -> Optional[Organism]:
-        """Get the organism with highest fitness."""
-        evaluated = [o for o in self._organisms if o.fitness is not None]
-        if not evaluated:
-            return None
-        return max(evaluated, key=lambda o: o.fitness)
+        """Get the organism with highest fitness (thread-safe)."""
+        with self._lock:
+            evaluated = [o for o in self._organisms if o.fitness is not None]
+            if not evaluated:
+                return None
+            return max(evaluated, key=lambda o: o.fitness)
 
     def size(self) -> int:
-        return len(self._organisms)
+        """Get the number of organisms (thread-safe)."""
+        with self._lock:
+            return len(self._organisms)
 
     def all(self) -> List[Organism]:
-        return self._organisms.copy()
+        """Get a copy of all organisms (thread-safe)."""
+        with self._lock:
+            return self._organisms.copy()
