@@ -291,7 +291,7 @@ def run_evolution(
 @click.option(
     "-m",
     "--model",
-    default="gpt-4o-mini",
+    default="gpt-5.1",
     show_default=True,
     help="LLM model for mutations",
 )

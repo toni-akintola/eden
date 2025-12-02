@@ -8,7 +8,7 @@ from utils import build_mutation_prompt, MutationResponse
 class Mutator:
     """LLM-based mutator for genetic programming."""
 
-    def __init__(self, model: str = "gpt-4o-mini"):
+    def __init__(self, model: str = "gpt-5.1"):
         self.model = model
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
