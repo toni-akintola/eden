@@ -33,6 +33,10 @@ class MutationResponse(BaseModel):
         description="Queue discipline: FCFS, LIFO, or SIRO",
         pattern="^(FCFS|LIFO|SIRO)$",
     )
+    information_rule: str = Field(
+        description="Information rule: NO_INFORMATION, FULL_INFORMATION, or COARSE_INFORMATION",
+        pattern="^(NO_INFORMATION|FULL_INFORMATION|COARSE_INFORMATION)$",
+    )
     mutation_reasoning: str
 
 
@@ -90,27 +94,39 @@ PARENT ORGANISM (generation {parent.generation}, fitness: {parent.fitness if par
   entry_rule_code: {parent.entry_rule_code}
   exit_rule_code: {parent.exit_rule_code}
   queue_discipline: {parent.queue_discipline}
+  information_rule: {parent.information_rule}
 {behavior_data}{inspiration_text}
 MUTABLE PARAMETERS:
 - entry_rule_code: lambda k: <float>  (k = queue length, returns entry probability [0,1])
 - exit_rule_code: lambda k, l: (<float>, <float>)  (k = queue length, l = position, returns (exit_rate, exit_prob))
-- queue_discipline: One of "FCFS" (First Come First Serve), "LIFO" (Last In First Out), or "SIRO" (Service In Random Order)
+- queue_discipline: One of "FCFS", "LIFO", or "SIRO"
+- information_rule: One of "NO_INFORMATION", "FULL_INFORMATION", or "COARSE_INFORMATION"
 
 QUEUE DISCIPLINE OPTIONS:
-- FCFS: Agents are served in order of arrival (fair, predictable)
-- LIFO: Most recently arrived agents are served first (can reduce waiting for new arrivals)
+- FCFS: Agents are served in order of arrival (fair, predictable wait times)
+- LIFO: Most recently arrived agents are served first (reduces wait for new arrivals, but unfair to early arrivals)
 - SIRO: Agents are selected randomly for service (unpredictable, can reduce strategic behavior)
+
+INFORMATION RULE OPTIONS (affects agent beliefs and voluntary abandonment):
+- NO_INFORMATION: Agents don't observe queue length; they use expected queue length from the steady-state distribution. Beliefs are uncertain and updated via Bayesian inference.
+- FULL_INFORMATION: Agents observe the exact queue length and their position. They know exactly how long they'll wait, leading to more accurate abandonment decisions.
+- COARSE_INFORMATION: Agents observe a coarse signal (short/medium/long queue). Provides partial information - better than no information but less precise than full.
+
+HOW INFORMATION AFFECTS AGENT BEHAVIOR:
+- With NO_INFORMATION, agents may stay too long (don't know queue is long) or leave too early (pessimistic beliefs)
+- With FULL_INFORMATION, agents make optimal abandonment decisions, which can reduce welfare if many leave
+- With COARSE_INFORMATION, agents get partial guidance - a balance between the extremes
 
 MUTATION GUIDELINES:
 - Make small, targeted changes to improve fitness
 - Can adjust constants, add/remove conditions, change mathematical relationships
-- Can change queue discipline if it might improve performance
+- Can change queue discipline and information rule if it might improve performance
+- Consider how information rule interacts with entry/exit policies
 - Learn from high-performing inspirations but don't copy exactly
 - Ensure functions are valid Python lambda expressions
 - Entry rule should return probability in [0, 1]
 - Exit rule returns (0.0, 0.0) for no exits, or (rate, probability) for designer-induced exits
-- Queue discipline must be exactly "FCFS", "LIFO", or "SIRO"
 
-OBJECTIVE: Maximize welfare score W (higher is better) by optimizing entry/exit policies and queue discipline.
+OBJECTIVE: Maximize welfare score W (higher is better) by optimizing entry/exit policies, queue discipline, and information rule.
 
-Output the complete mutated functions and queue discipline."""
+Output the complete mutated functions, queue discipline, and information rule."""

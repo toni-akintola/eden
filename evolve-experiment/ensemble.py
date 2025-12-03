@@ -58,6 +58,7 @@ class Mutator:
             entry_rule_code=result.entry_rule_code,
             exit_rule_code=result.exit_rule_code,
             queue_discipline=result.queue_discipline.upper(),
+            information_rule=result.information_rule.upper(),
             generation=parent.generation + 1,
             parent_id=parent.id,
         )

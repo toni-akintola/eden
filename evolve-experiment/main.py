@@ -47,6 +47,18 @@ def organism_to_model(
         organism.queue_discipline.upper(), QueueDiscipline.FCFS
     )
 
+    # Parse information rule string to enum
+    info_rule_map = {
+        "NO_INFORMATION": InformationRule.NO_INFORMATION_BEYOND_REC,
+        "FULL_INFORMATION": InformationRule.FULL_INFORMATION,
+        "COARSE_INFORMATION": InformationRule.COARSE_INFORMATION,
+    }
+    # Get information rule with fallback for older organisms
+    info_rule_str = getattr(organism, "information_rule", "NO_INFORMATION")
+    information_rule = info_rule_map.get(
+        info_rule_str.upper(), InformationRule.NO_INFORMATION_BEYOND_REC
+    )
+
     return CheTercieuxQueueModel(
         V_surplus=V_surplus,
         C_waiting_cost=C_waiting_cost,
@@ -58,7 +70,7 @@ def organism_to_model(
         ),
         design_rules=EntryExitRule(entry_rule_fn=entry_fn, exit_rule_fn=exit_fn),
         queue_discipline=queue_discipline,
-        information_rule=InformationRule.NO_INFORMATION_BEYOND_REC,
+        information_rule=information_rule,
     )
 
 
@@ -118,6 +130,9 @@ def create_seed_organism(random_seed: int = 42) -> Organism:
         entry_rule_code=generate_random_entry_rule(),
         exit_rule_code=generate_random_exit_rule(),
         queue_discipline=random.choice(["FCFS", "LIFO", "SIRO"]),
+        information_rule=random.choice(
+            ["NO_INFORMATION", "FULL_INFORMATION", "COARSE_INFORMATION"]
+        ),
         generation=0,
     )
 
@@ -133,12 +148,14 @@ def evaluate_organism(
     R_provider_profit: float,
     alpha_weight: float,
     return_results: bool = False,
+    cache_results: bool = True,
 ):
     """
     Evaluate an organism and return its fitness score.
 
     Args:
         return_results: If True, returns (fitness, results) tuple instead of just fitness
+        cache_results: If True, caches simulation results on the organism for reuse
 
     Returns:
         fitness score, or (fitness, results) if return_results=True
@@ -155,6 +172,10 @@ def evaluate_organism(
     simulator = QueueSimulator(model)
     results = simulator.run_simulation(max_time=simulation_time)
     fitness = evaluate_designer_performance(model, results)
+
+    # Cache results on organism to avoid re-running expensive simulations
+    if cache_results:
+        organism.cached_simulation_results = results
 
     if return_results:
         return fitness, results
@@ -175,10 +196,11 @@ def mutate_and_evaluate(
     alpha_weight: float,
 ) -> Organism:
     """Mutate and evaluate a single organism."""
-    # Get parent's simulation results for behavior insights
-    parent_results = None
-    if parent.fitness is not None:
-        # Re-run parent simulation to get detailed results
+    # Use cached simulation results if available, otherwise re-run
+    parent_results = parent.cached_simulation_results
+
+    if parent_results is None and parent.fitness is not None:
+        # Cache miss - need to re-run simulation (should be rare after first eval)
         parent_fitness, parent_results = evaluate_organism(
             parent,
             simulation_time,
@@ -189,6 +211,7 @@ def mutate_and_evaluate(
             R_provider_profit,
             alpha_weight,
             return_results=True,
+            cache_results=True,
         )
 
     # Mutate to create child (with parent behavior data)
@@ -200,7 +223,7 @@ def mutate_and_evaluate(
         parent_simulation_results=parent_results,
     )
 
-    # Evaluate child
+    # Evaluate child (and cache its results)
     child.fitness = evaluate_organism(
         child,
         simulation_time,
@@ -210,6 +233,7 @@ def mutate_and_evaluate(
         C_waiting_cost,
         R_provider_profit,
         alpha_weight,
+        cache_results=True,
     )
 
     return child
@@ -249,6 +273,7 @@ def run_evolution(
         C_waiting_cost,
         R_provider_profit,
         alpha_weight,
+        cache_results=True,  # Cache results for reuse in mutation
     )
     database.add(seed)
 
@@ -260,6 +285,7 @@ def run_evolution(
         click.echo(f"  entry: {seed.entry_rule_code}")
         click.echo(f"  exit: {seed.exit_rule_code}")
         click.echo(f"  queue_discipline: {seed.queue_discipline}")
+        click.echo(f"  information_rule: {seed.information_rule}")
         click.echo(f"Seed organism fitness: {seed.fitness:.4f}")
         click.echo(f"Starting evolution for {num_steps} steps...\n")
 
@@ -361,6 +387,7 @@ def run_evolution(
                 "entry_rule_code": best.entry_rule_code,
                 "exit_rule_code": best.exit_rule_code,
                 "queue_discipline": best.queue_discipline,
+                "information_rule": best.information_rule,
                 "generation": best.generation,
             }
             if best
@@ -378,6 +405,7 @@ def run_evolution(
             click.echo(f"  entry: {best.entry_rule_code}")
             click.echo(f"  exit: {best.exit_rule_code}")
             click.echo(f"  queue_discipline: {best.queue_discipline}")
+            click.echo(f"  information_rule: {best.information_rule}")
         else:
             click.echo("\nEvolution complete. No organisms evaluated.")
 
@@ -410,7 +438,7 @@ def run_evolution(
 @click.option(
     "-m",
     "--model",
-    default="gpt-5.1-2025-11-13",
+    default="gpt-5.1",
     show_default=True,
     help="LLM model for mutations",
 )

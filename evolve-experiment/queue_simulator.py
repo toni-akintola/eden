@@ -116,20 +116,52 @@ class QueueSimulator:
         """
         Update all agents' beliefs about their position after queue changes.
         Called after arrivals, services, or exits to maintain consistent beliefs.
+
+        The information rule determines how much agents know about their position:
+        - FULL_INFORMATION: Agents know their exact position with certainty
+        - COARSE_INFORMATION: Agents know a range (front/middle/back of queue)
+        - NO_INFORMATION: Agents maintain uncertain beliefs updated via Bayesian inference
         """
         if not self.enable_belief_updates:
             return
 
-        # After any queue change, update each agent's position belief
-        # In reality, what agents observe depends on the information rule
+        k = len(self.queue_agents)
+
         for idx, agent in enumerate(self.queue_agents):
             position = idx + 1  # 1-indexed position
 
             if self.model.information_rule == InformationRule.FULL_INFORMATION:
-                # Agents know their exact position
+                # Agents know their exact position with certainty
                 agent.belief = {position: 1.0}
-            # For other information rules, beliefs are updated via Bayesian updating
-            # in _update_beliefs_after_service
+
+            elif self.model.information_rule == InformationRule.COARSE_INFORMATION:
+                # Agents observe a coarse signal about their position
+                # They know if they're in the front third, middle third, or back third
+                if k <= 3:
+                    # Small queue - agents know exact position
+                    agent.belief = {position: 1.0}
+                else:
+                    # Divide queue into thirds
+                    third = k // 3
+                    if position <= third:
+                        # Front third - uniform belief over front positions
+                        agent.belief = {p: 1.0 / third for p in range(1, third + 1)}
+                    elif position <= 2 * third:
+                        # Middle third
+                        middle_size = third
+                        agent.belief = {
+                            p: 1.0 / middle_size
+                            for p in range(third + 1, 2 * third + 1)
+                        }
+                    else:
+                        # Back third
+                        back_size = k - 2 * third
+                        agent.belief = {
+                            p: 1.0 / back_size for p in range(2 * third + 1, k + 1)
+                        }
+
+            # For NO_INFORMATION_BEYOND_REC, beliefs are updated via Bayesian updating
+            # in _update_beliefs_after_service - we don't reset beliefs here
 
     def _update_beliefs_after_service(self, service_occurred: bool):
         """
@@ -137,6 +169,11 @@ class QueueSimulator:
 
         Implements the paper's Bayesian belief update formula:
         γ̃_{t+1}^ℓ = (γ̃_t^ℓ · μ_B + γ̃_t^{ℓ+1} · μ_A) / (γ̃_t^1 · μ_B + Σ_{i=2}^{K_A} γ̃_t^i)
+
+        The update depends on the information rule:
+        - FULL_INFORMATION: Beliefs are reset to exact position (done in _update_agent_positions)
+        - COARSE_INFORMATION: Beliefs are reset to coarse range (done in _update_agent_positions)
+        - NO_INFORMATION: Beliefs are updated via Bayesian inference
 
         Args:
             service_occurred: Whether a service completion just happened
@@ -147,13 +184,19 @@ class QueueSimulator:
         k = len(self.queue_agents)
         mu_k = self.model.primitive_process.service_rate_fn(k) if k > 0 else 0.0
 
+        # For FULL_INFORMATION and COARSE_INFORMATION, beliefs are already updated
+        # in _update_agent_positions. We only need Bayesian updates for NO_INFORMATION.
+        if self.model.information_rule == InformationRule.NO_INFORMATION_BEYOND_REC:
+            for agent in self.queue_agents:
+                agent.update_belief_on_service(
+                    queue_discipline=self.model.queue_discipline,
+                    service_occurred=service_occurred,
+                    current_queue_length=k,
+                    service_rate=mu_k,
+                )
+
+        # Update expected wait for all agents (depends on current beliefs)
         for agent in self.queue_agents:
-            agent.update_belief_on_service(
-                queue_discipline=self.model.queue_discipline,
-                service_occurred=service_occurred,
-                current_queue_length=k,
-                service_rate=mu_k,
-            )
             agent.update_expected_wait(mu_k, self.model.queue_discipline)
 
     def _check_voluntary_abandonment(self) -> List[int]:
