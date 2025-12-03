@@ -11,7 +11,7 @@ from typing import List
 import click
 from langfuse import observe, propagate_attributes
 from database import Database, Organism
-from ensemble import Mutator
+from mutator import Mutator, crossover
 from queue_simulator import QueueSimulator
 from evaluator import evaluate_designer_performance
 from evolve_types import (
@@ -255,6 +255,44 @@ def mutate_and_evaluate(
 
 
 @observe()
+def crossover_and_evaluate(
+    parent1: Organism,
+    parent2: Organism,
+    simulation_time: float,
+    arrival_rate: float,
+    service_rate: float,
+    V_surplus: float,
+    C_waiting_cost: float,
+    R_provider_profit: float,
+    alpha_weight: float,
+) -> Organism:
+    """Perform crossover between two parents and evaluate the child."""
+    child = crossover(parent1, parent2)
+
+    child.fitness = evaluate_organism(
+        child,
+        simulation_time,
+        arrival_rate,
+        service_rate,
+        V_surplus,
+        C_waiting_cost,
+        R_provider_profit,
+        alpha_weight,
+        cache_results=True,
+    )
+
+    # Update the mutation record with fitness delta (relative to parent1)
+    if (
+        child.mutation_record
+        and child.fitness is not None
+        and parent1.fitness is not None
+    ):
+        child.mutation_record.fitness_delta = child.fitness - parent1.fitness
+
+    return child
+
+
+@observe()
 def run_evolution(
     num_steps: int,
     simulation_time: float,
@@ -269,8 +307,18 @@ def run_evolution(
     num_workers: int,
     verbose: bool,
     output_file: str | None,
+    selection_pressure: float = 0.1,  # Keep top 10% of children
+    elite_size: int = 10,  # Number of elite organisms to preserve
 ) -> dict:
-    """Run the evolutionary optimization loop with parallel workers."""
+    """
+    Run the evolutionary optimization loop with parallel workers.
+
+    New features:
+    - Selection pressure: Only keep top X% of children each generation
+    - Elitism: Always preserve top K organisms
+    - Adaptive mutation: Adjust mutation strength based on progress
+    - Crossover: Combine traits from multiple parents
+    """
     # Set random seed for reproducibility
     random.seed(random_seed)
 
@@ -288,13 +336,18 @@ def run_evolution(
         C_waiting_cost,
         R_provider_profit,
         alpha_weight,
-        cache_results=True,  # Cache results for reuse in mutation
+        cache_results=True,
     )
     database.add(seed)
+
+    # Initialize adaptive mutation with seed fitness
+    mutator.update_adaptive_state(seed.fitness)
 
     if verbose:
         click.echo(f"Random seed: {random_seed}")
         click.echo(f"Workers: {num_workers}")
+        click.echo(f"Selection pressure: keep top {selection_pressure*100:.0f}%")
+        click.echo(f"Elite size: {elite_size}")
         click.echo(f"Fixed parameters: lambda={arrival_rate}, mu={service_rate}")
         click.echo(f"Seed organism:")
         click.echo(f"  entry: {seed.entry_rule_code}")
@@ -308,35 +361,78 @@ def run_evolution(
 
     # Synchronized batch evolution: each step runs all workers in parallel
     for step in range(1, num_steps + 1):
+        # Get adaptive mutation info for this step
+        mutation_info = mutator.get_mutation_info()
+        crossover_prob = mutation_info["crossover_probability"]
+
         if verbose:
-            click.echo(f"Step {step}/{num_steps}")
+            click.echo(
+                f"Step {step}/{num_steps} [temp={mutation_info['temperature']:.2f}, "
+                f"strength={mutation_info['mutation_strength']}, "
+                f"crossover={crossover_prob:.0%}]"
+            )
 
         try:
-            # Sample parents for all workers (synchronized - all from same DB state)
-            parent_inspiration_pairs = []
+            # Decide which operations to perform for each worker
+            operations = []
             for _ in range(num_workers):
-                parent, inspirations = database.sample()
-                parent_inspiration_pairs.append((parent, inspirations))
+                if random.random() < crossover_prob and database.size() >= 2:
+                    operations.append("crossover")
+                else:
+                    operations.append("mutation")
 
-            # Run all mutations and evaluations in parallel
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = [
-                    executor.submit(
-                        mutate_and_evaluate,
-                        parent=parent,
-                        inspirations=inspirations,
-                        mutator=mutator,
-                        simulation_time=simulation_time,
-                        arrival_rate=arrival_rate,
-                        service_rate=service_rate,
-                        V_surplus=V_surplus,
-                        C_waiting_cost=C_waiting_cost,
-                        R_provider_profit=R_provider_profit,
-                        alpha_weight=alpha_weight,
-                        database=database,
+            # Sample parents for all workers
+            parent_pairs = []
+            for op in operations:
+                parent, inspirations = database.sample()
+                if op == "crossover" and inspirations:
+                    # For crossover, get a second parent from inspirations or sample again
+                    parent2 = (
+                        random.choice(inspirations)
+                        if inspirations
+                        else database.sample()[0]
                     )
-                    for parent, inspirations in parent_inspiration_pairs
-                ]
+                    parent_pairs.append((op, parent, parent2, inspirations))
+                else:
+                    parent_pairs.append((op, parent, None, inspirations))
+
+            # Run all operations in parallel
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = []
+                for op, parent, parent2, inspirations in parent_pairs:
+                    if op == "crossover" and parent2:
+                        futures.append(
+                            executor.submit(
+                                crossover_and_evaluate,
+                                parent1=parent,
+                                parent2=parent2,
+                                simulation_time=simulation_time,
+                                arrival_rate=arrival_rate,
+                                service_rate=service_rate,
+                                V_surplus=V_surplus,
+                                C_waiting_cost=C_waiting_cost,
+                                R_provider_profit=R_provider_profit,
+                                alpha_weight=alpha_weight,
+                            )
+                        )
+                    else:
+                        futures.append(
+                            executor.submit(
+                                mutate_and_evaluate,
+                                parent=parent,
+                                inspirations=inspirations,
+                                mutator=mutator,
+                                simulation_time=simulation_time,
+                                arrival_rate=arrival_rate,
+                                service_rate=service_rate,
+                                V_surplus=V_surplus,
+                                C_waiting_cost=C_waiting_cost,
+                                R_provider_profit=R_provider_profit,
+                                alpha_weight=alpha_weight,
+                                database=database,
+                            )
+                        )
+
                 children = []
                 for f in futures:
                     try:
@@ -346,15 +442,37 @@ def run_evolution(
                         if verbose:
                             click.echo(f"  Error in worker: {e}", err=True)
 
-            # Aggregate: add all children to database
-            for child in children:
-                database.add(child)
+            # === SELECTION PRESSURE ===
+            # Only keep the top X% of children
+            selected_children = []
+            if children:
+                children_with_fitness = [c for c in children if c.fitness is not None]
+                children_with_fitness.sort(key=lambda c: c.fitness, reverse=True)
+
+                # Keep top selection_pressure fraction (minimum 1)
+                num_to_keep = max(
+                    1, int(len(children_with_fitness) * selection_pressure)
+                )
+                selected_children = children_with_fitness[:num_to_keep]
+
+                # Add selected children to database
+                for child in selected_children:
+                    database.add(child)
 
             # Record step results
             best = database.get_best()
+
+            # === ADAPTIVE MUTATION ===
+            # Update mutation controller based on best fitness
+            if best and best.fitness is not None:
+                mutator.update_adaptive_state(best.fitness)
+
             if children:
                 # Calculate statistics for this step
                 child_fitnesses = [c.fitness for c in children if c.fitness is not None]
+                selected_fitnesses = [
+                    c.fitness for c in selected_children if c.fitness is not None
+                ]
                 avg_fitness = (
                     sum(child_fitnesses) / len(child_fitnesses)
                     if child_fitnesses
@@ -362,13 +480,24 @@ def run_evolution(
                 )
                 best_child_fitness = max(child_fitnesses) if child_fitnesses else None
 
+                # Count crossovers vs mutations
+                num_crossovers = sum(
+                    1 for op, _, _, _ in parent_pairs if op == "crossover"
+                )
+                num_mutations = len(parent_pairs) - num_crossovers
+
                 history.append(
                     {
                         "step": step,
                         "num_children": len(children),
+                        "num_selected": len(selected_children),
+                        "num_crossovers": num_crossovers,
+                        "num_mutations": num_mutations,
                         "avg_child_fitness": avg_fitness,
                         "best_child_fitness": best_child_fitness,
                         "best_fitness": best.fitness if best else None,
+                        "mutation_temperature": mutation_info["temperature"],
+                        "mutation_strength": mutation_info["mutation_strength"],
                     }
                 )
 
@@ -384,7 +513,8 @@ def run_evolution(
                         else "N/A"
                     )
                     click.echo(
-                        f"  {len(children)} children evaluated, "
+                        f"  {len(children)} children ({num_mutations}M/{num_crossovers}X), "
+                        f"selected {len(selected_children)}, "
                         f"avg={avg_fitness:.4f}, "
                         f"best_child={best_child_str}, "
                         f"overall_best={best_overall_str}"
@@ -499,6 +629,18 @@ def run_evolution(
 @click.option("-o", "--output", default=None, help="Output JSON file")
 @click.option("-q", "--quiet", is_flag=True, help="Quiet mode")
 @click.option("--visualize", is_flag=True, help="Generate visualization plots")
+@click.option(
+    "--selection-pressure",
+    default=0.1,
+    show_default=True,
+    help="Fraction of children to keep (0.1 = top 10%)",
+)
+@click.option(
+    "--elite-size",
+    default=10,
+    show_default=True,
+    help="Number of elite organisms to always preserve",
+)
 def main(
     steps,
     sim_time,
@@ -514,6 +656,8 @@ def main(
     output,
     quiet,
     visualize,
+    selection_pressure,
+    elite_size,
 ):
     """Evolutionary optimizer for Che-Tercieux queue models."""
     if not os.getenv("OPENAI_API_KEY"):
@@ -538,6 +682,8 @@ def main(
             num_workers=workers,
             verbose=not quiet,
             output_file=output,
+            selection_pressure=selection_pressure,
+            elite_size=elite_size,
         )
 
         if visualize:
