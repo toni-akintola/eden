@@ -194,6 +194,7 @@ def mutate_and_evaluate(
     C_waiting_cost: float,
     R_provider_profit: float,
     alpha_weight: float,
+    database: Database,
 ) -> Organism:
     """Mutate and evaluate a single organism."""
     # Use cached simulation results if available, otherwise re-run
@@ -214,13 +215,19 @@ def mutate_and_evaluate(
             cache_results=True,
         )
 
-    # Mutate to create child (with parent behavior data)
+    # Get lineage history and successful patterns for context
+    lineage_history = database.get_mutation_history(parent, max_depth=3)
+    successful_patterns = database.get_successful_mutation_patterns(min_count=2)
+
+    # Mutate to create child (with parent behavior data and history)
     child = mutator.mutate(
         parent,
         inspirations,
         arrival_rate,
         service_rate,
         parent_simulation_results=parent_results,
+        lineage_history=lineage_history,
+        successful_patterns=successful_patterns,
     )
 
     # Evaluate child (and cache its results)
@@ -235,6 +242,14 @@ def mutate_and_evaluate(
         alpha_weight,
         cache_results=True,
     )
+
+    # Update the mutation record with fitness delta
+    if (
+        child.mutation_record
+        and child.fitness is not None
+        and parent.fitness is not None
+    ):
+        child.mutation_record.fitness_delta = child.fitness - parent.fitness
 
     return child
 
@@ -318,6 +333,7 @@ def run_evolution(
                         C_waiting_cost=C_waiting_cost,
                         R_provider_profit=R_provider_profit,
                         alpha_weight=alpha_weight,
+                        database=database,
                     )
                     for parent, inspirations in parent_inspiration_pairs
                 ]

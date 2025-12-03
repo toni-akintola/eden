@@ -7,6 +7,49 @@ import heapq
 
 
 @dataclass
+class MutationRecord:
+    """Records what changed in a mutation and whether it was successful."""
+
+    # What changed
+    entry_rule_changed: bool = False
+    exit_rule_changed: bool = False
+    queue_discipline_changed: bool = False
+    information_rule_changed: bool = False
+
+    # The reasoning provided by the LLM
+    mutation_reasoning: str = ""
+
+    # Fitness delta (child - parent)
+    fitness_delta: Optional[float] = None
+
+    # Parent info for context
+    parent_fitness: Optional[float] = None
+    parent_entry_rule: str = ""
+    parent_exit_rule: str = ""
+    parent_queue_discipline: str = ""
+    parent_information_rule: str = ""
+
+    @property
+    def was_successful(self) -> bool:
+        """A mutation is successful if it improved fitness."""
+        return self.fitness_delta is not None and self.fitness_delta > 0
+
+    @property
+    def changes_summary(self) -> str:
+        """Short summary of what changed."""
+        changes = []
+        if self.entry_rule_changed:
+            changes.append("entry")
+        if self.exit_rule_changed:
+            changes.append("exit")
+        if self.queue_discipline_changed:
+            changes.append("discipline")
+        if self.information_rule_changed:
+            changes.append("info_rule")
+        return "+".join(changes) if changes else "none"
+
+
+@dataclass
 class Organism:
     """Represents a program (entry/exit rules and queue discipline) in the evolutionary population."""
 
@@ -20,6 +63,10 @@ class Organism:
     fitness: Optional[float] = None
     parent_id: Optional[str] = None
     id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
+
+    # Mutation history - records the mutation that created this organism
+    mutation_record: Optional[MutationRecord] = field(default=None, repr=False)
+
     # Cached simulation results to avoid re-running expensive simulations
     cached_simulation_results: Optional[Any] = field(default=None, repr=False)
 
@@ -305,3 +352,92 @@ class Database:
                 "max_generation": self._cached_max_gen,
                 "top_k_size": len(self._top_k_heap),
             }
+
+    def get_by_id(self, organism_id: str) -> Optional[Organism]:
+        """Get an organism by its ID (thread-safe)."""
+        with self._lock:
+            for o in self._organisms:
+                if o.id == organism_id:
+                    return o
+            return None
+
+    def get_lineage(self, organism: Organism, max_depth: int = 5) -> List[Organism]:
+        """
+        Get the ancestry chain of an organism (thread-safe).
+
+        Returns a list starting with the organism, then parent, grandparent, etc.
+        Limited to max_depth ancestors to avoid excessive lookups.
+        """
+        with self._lock:
+            lineage = [organism]
+            current = organism
+
+            for _ in range(max_depth):
+                if current.parent_id is None:
+                    break
+
+                # Find parent
+                parent = None
+                for o in self._organisms:
+                    if o.id == current.parent_id:
+                        parent = o
+                        break
+
+                if parent is None:
+                    break  # Parent was pruned or not found
+
+                lineage.append(parent)
+                current = parent
+
+            return lineage
+
+    def get_mutation_history(
+        self, organism: Organism, max_depth: int = 5
+    ) -> List[Dict[str, Any]]:
+        """
+        Get the mutation history for an organism's lineage (thread-safe).
+
+        Returns a list of dicts with mutation details, fitness trajectory, etc.
+        """
+        lineage = self.get_lineage(organism, max_depth)
+
+        history = []
+        for i, org in enumerate(lineage):
+            entry = {
+                "generation": org.generation,
+                "fitness": org.fitness,
+                "id": org.id,
+                "entry_rule": org.entry_rule_code,
+                "exit_rule": org.exit_rule_code,
+                "queue_discipline": org.queue_discipline,
+                "information_rule": org.information_rule,
+            }
+
+            if org.mutation_record:
+                entry["mutation"] = {
+                    "changes": org.mutation_record.changes_summary,
+                    "reasoning": org.mutation_record.mutation_reasoning,
+                    "fitness_delta": org.mutation_record.fitness_delta,
+                    "was_successful": org.mutation_record.was_successful,
+                }
+
+            history.append(entry)
+
+        return history
+
+    def get_successful_mutation_patterns(self, min_count: int = 3) -> Dict[str, int]:
+        """
+        Analyze which types of mutations tend to be successful (thread-safe).
+
+        Returns a dict mapping change patterns to success counts.
+        """
+        with self._lock:
+            patterns: Dict[str, int] = {}
+
+            for org in self._organisms:
+                if org.mutation_record and org.mutation_record.was_successful:
+                    pattern = org.mutation_record.changes_summary
+                    patterns[pattern] = patterns.get(pattern, 0) + 1
+
+            # Filter to patterns with at least min_count occurrences
+            return {k: v for k, v in patterns.items() if v >= min_count}

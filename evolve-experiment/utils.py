@@ -1,6 +1,6 @@
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field
-from database import Organism
+from database import Organism, MutationRecord
 from evolve_types import SimulationResults
 
 
@@ -40,12 +40,41 @@ class MutationResponse(BaseModel):
     mutation_reasoning: str
 
 
+def create_mutation_record(
+    parent: Organism,
+    child_entry: str,
+    child_exit: str,
+    child_discipline: str,
+    child_info_rule: str,
+    mutation_reasoning: str,
+) -> MutationRecord:
+    """Create a MutationRecord tracking what changed from parent to child."""
+    return MutationRecord(
+        entry_rule_changed=(parent.entry_rule_code != child_entry),
+        exit_rule_changed=(parent.exit_rule_code != child_exit),
+        queue_discipline_changed=(
+            parent.queue_discipline.upper() != child_discipline.upper()
+        ),
+        information_rule_changed=(
+            parent.information_rule.upper() != child_info_rule.upper()
+        ),
+        mutation_reasoning=mutation_reasoning,
+        parent_fitness=parent.fitness,
+        parent_entry_rule=parent.entry_rule_code,
+        parent_exit_rule=parent.exit_rule_code,
+        parent_queue_discipline=parent.queue_discipline,
+        parent_information_rule=parent.information_rule,
+    )
+
+
 def build_mutation_prompt(
     parent: Organism,
     inspirations: List[Organism],
     arrival_rate: float,
     service_rate: float,
     parent_simulation_results: Optional[SimulationResults] = None,
+    lineage_history: Optional[List[Dict[str, Any]]] = None,
+    successful_patterns: Optional[Dict[str, int]] = None,
 ) -> str:
     """Build the prompt for mutating a parent organism."""
 
@@ -58,6 +87,7 @@ Organism {i} (fitness: {org.fitness:.4f}):
   entry_rule_code: {org.entry_rule_code}
   exit_rule_code: {org.exit_rule_code}
   queue_discipline: {org.queue_discipline}
+  information_rule: {org.information_rule}
 """
 
     behavior_data = ""
@@ -84,6 +114,45 @@ PARENT SIMULATION RESULTS (agent behavior data):
   Total simulation time: {parent_simulation_results.total_run_time:.2f}
 """
 
+    # Build lineage/mutation history section
+    lineage_text = ""
+    if lineage_history and len(lineage_history) > 1:
+        lineage_text = "\n\nMUTATION HISTORY (recent ancestors):\n"
+        lineage_text += "This shows what mutations led to the current organism and whether they helped.\n"
+
+        for i, ancestor in enumerate(lineage_history[1:], 1):  # Skip current (index 0)
+            fitness_str = f"{ancestor['fitness']:.4f}" if ancestor["fitness"] else "N/A"
+            lineage_text += f"\n  Ancestor {i} (gen {ancestor['generation']}, fitness: {fitness_str}):\n"
+            lineage_text += f"    entry: {ancestor['entry_rule']}\n"
+            lineage_text += f"    exit: {ancestor['exit_rule']}\n"
+            lineage_text += f"    discipline: {ancestor['queue_discipline']}, info: {ancestor['information_rule']}\n"
+
+            if "mutation" in ancestor:
+                mut = ancestor["mutation"]
+                delta_str = (
+                    f"{mut['fitness_delta']:+.4f}" if mut["fitness_delta"] else "N/A"
+                )
+                success_str = "✓ IMPROVED" if mut["was_successful"] else "✗ worse/same"
+                lineage_text += (
+                    f"    → Mutation: {mut['changes']} ({success_str}, Δ={delta_str})\n"
+                )
+                if mut["reasoning"]:
+                    # Truncate long reasoning
+                    reasoning = (
+                        mut["reasoning"][:200] + "..."
+                        if len(mut["reasoning"]) > 200
+                        else mut["reasoning"]
+                    )
+                    lineage_text += f"    → Reasoning: {reasoning}\n"
+
+    # Build successful patterns section
+    patterns_text = ""
+    if successful_patterns:
+        patterns_text = "\n\nSUCCESSFUL MUTATION PATTERNS (what tends to work):\n"
+        sorted_patterns = sorted(successful_patterns.items(), key=lambda x: -x[1])
+        for pattern, count in sorted_patterns[:5]:  # Top 5 patterns
+            patterns_text += f"  - {pattern}: {count} successful mutations\n"
+
     return f"""You are a genetic programming system that mutates queue control functions.
 
 FIXED EXOGENOUS PARAMETERS (do not change):
@@ -95,7 +164,7 @@ PARENT ORGANISM (generation {parent.generation}, fitness: {parent.fitness if par
   exit_rule_code: {parent.exit_rule_code}
   queue_discipline: {parent.queue_discipline}
   information_rule: {parent.information_rule}
-{behavior_data}{inspiration_text}
+{behavior_data}{lineage_text}{patterns_text}{inspiration_text}
 MUTABLE PARAMETERS:
 - entry_rule_code: lambda k: <float>  (k = queue length, returns entry probability [0,1])
 - exit_rule_code: lambda k, l: (<float>, <float>)  (k = queue length, l = position, returns (exit_rate, exit_prob))

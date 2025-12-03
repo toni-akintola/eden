@@ -229,8 +229,9 @@ def visualize_functions(
     axes[1, 1].set_title(f"Exit Rule (at k=10)\n{organism.exit_rule_code[:60]}...")
     axes[1, 1].grid(True, alpha=0.3)
 
+    fitness_str = f"{organism.fitness:.4f}" if organism.fitness is not None else "N/A"
     plt.suptitle(
-        f"Organism Functions (Fitness: {organism.fitness:.4f if organism.fitness else 'N/A'}, Gen: {organism.generation}, Discipline: {organism.queue_discipline})",
+        f"Organism Functions (Fitness: {fitness_str}, Gen: {organism.generation}, Discipline: {organism.queue_discipline})",
         fontsize=14,
         y=0.995,
     )
@@ -250,12 +251,13 @@ def create_summary_report(database, history: List[dict], output_file: str = None
         print("No organisms evaluated yet")
         return
 
+    best_fitness_str = f"{best.fitness:.4f}" if best.fitness is not None else "N/A"
     report = f"""
 EVOLUTION SUMMARY REPORT
 {'='*60}
 Total Steps: {len(history)}
 Population Size: {database.size()}
-Best Fitness: {best.fitness:.4f if best.fitness else 'N/A'}
+Best Fitness: {best_fitness_str}
 Best Generation: {best.generation}
 
 BEST ORGANISM:
