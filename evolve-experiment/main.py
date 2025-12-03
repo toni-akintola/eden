@@ -5,9 +5,11 @@ import os
 import sys
 import json
 import random
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import List
 import click
+from langfuse import observe, propagate_attributes
 from database import Database, Organism
 from ensemble import Mutator
 from queue_simulator import QueueSimulator
@@ -120,6 +122,7 @@ def create_seed_organism(random_seed: int = 42) -> Organism:
     )
 
 
+@observe()
 def evaluate_organism(
     organism: Organism,
     simulation_time: float,
@@ -158,6 +161,7 @@ def evaluate_organism(
     return fitness
 
 
+@observe()
 def mutate_and_evaluate(
     parent: Organism,
     inspirations: List[Organism],
@@ -211,6 +215,7 @@ def mutate_and_evaluate(
     return child
 
 
+@observe()
 def run_evolution(
     num_steps: int,
     simulation_time: float,
@@ -471,36 +476,40 @@ def main(
         click.echo("Error: OPENAI_API_KEY not set", err=True)
         sys.exit(1)
 
-    results = run_evolution(
-        num_steps=steps,
-        simulation_time=sim_time,
-        model_name=model,
-        arrival_rate=arrival_rate,
-        service_rate=service_rate,
-        V_surplus=v_surplus,
-        C_waiting_cost=c_cost,
-        R_provider_profit=r_profit,
-        alpha_weight=alpha,
-        random_seed=seed,
-        num_workers=workers,
-        verbose=not quiet,
-        output_file=output,
-    )
+    # Generate a unique session ID for this evolution run
+    session_id = f"evolution-{uuid.uuid4().hex[:8]}"
 
-    if visualize:
-        from visualize import (
-            plot_fitness_progression,
-            plot_population_stats,
-            create_summary_report,
+    with propagate_attributes(session_id=session_id):
+        results = run_evolution(
+            num_steps=steps,
+            simulation_time=sim_time,
+            model_name=model,
+            arrival_rate=arrival_rate,
+            service_rate=service_rate,
+            V_surplus=v_surplus,
+            C_waiting_cost=c_cost,
+            R_provider_profit=r_profit,
+            alpha_weight=alpha,
+            random_seed=seed,
+            num_workers=workers,
+            verbose=not quiet,
+            output_file=output,
         )
 
-        history = results.get("history", [])
-        database = results.get("database")
+        if visualize:
+            from visualize import (
+                plot_fitness_progression,
+                plot_population_stats,
+                create_summary_report,
+            )
 
-        if history and database:
-            plot_fitness_progression(history, "fitness_progression.png")
-            plot_population_stats(database, "population_stats.png")
-            create_summary_report(database, history, "evolution_report.txt")
+            history = results.get("history", [])
+            database = results.get("database")
+
+            if history and database:
+                plot_fitness_progression(history, "fitness_progression.png")
+                plot_population_stats(database, "population_stats.png")
+                create_summary_report(database, history, "evolution_report.txt")
 
 
 if __name__ == "__main__":

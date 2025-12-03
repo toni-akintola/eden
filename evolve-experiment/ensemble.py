@@ -1,6 +1,7 @@
 import os
 from typing import List, Optional
-from langfuse import openai
+from langfuse import observe
+from langfuse.openai import openai
 from database import Organism
 from utils import build_mutation_prompt, MutationResponse
 from evolve_types import SimulationResults
@@ -13,6 +14,7 @@ class Mutator:
         self.model = model
         self.client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+    @observe()
     def mutate(
         self,
         parent: Organism,
