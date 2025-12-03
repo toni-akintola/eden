@@ -22,19 +22,15 @@ class QueueSimulator:
     dynamic incentive constraint.
     """
 
-    def __init__(
-        self, model: CheTercieuxQueueModel, enable_belief_updates: bool = True
-    ):
+    def __init__(self, model: CheTercieuxQueueModel):
         """
         Initialize the simulator.
 
         Args:
             model: The queue model configuration
             enable_belief_updates: If True, agents update beliefs and may voluntarily abandon.
-                                   If False, uses simplified simulation without belief tracking.
         """
         self.model = model
-        self.enable_belief_updates = enable_belief_updates
         self.reset_state()
 
     def reset_state(self):
@@ -122,8 +118,6 @@ class QueueSimulator:
         - COARSE_INFORMATION: Agents know a range (front/middle/back of queue)
         - NO_INFORMATION: Agents maintain uncertain beliefs updated via Bayesian inference
         """
-        if not self.enable_belief_updates:
-            return
 
         k = len(self.queue_agents)
 
@@ -178,7 +172,7 @@ class QueueSimulator:
         Args:
             service_occurred: Whether a service completion just happened
         """
-        if not self.enable_belief_updates or not service_occurred:
+        if not service_occurred:
             return
 
         k = len(self.queue_agents)
@@ -206,8 +200,6 @@ class QueueSimulator:
         Returns:
             List of indices (0-based) of agents who should abandon
         """
-        if not self.enable_belief_updates:
-            return []
 
         abandon_indices = []
         V = self.model.V_surplus
@@ -231,7 +223,7 @@ class QueueSimulator:
 
             # --- 0. Check for Voluntary Abandonment ---
             # Agents check their incentive constraint and may leave
-            if self.enable_belief_updates and k > 0:
+            if k > 0:
                 abandon_indices = self._check_voluntary_abandonment()
                 # Remove abandoning agents (in reverse order to preserve indices)
                 for idx in sorted(abandon_indices, reverse=True):
@@ -322,10 +314,9 @@ class QueueSimulator:
                 self.queue_agents.append(new_agent)
 
                 # Initialize the new agent's expected wait
-                if self.enable_belief_updates:
-                    new_agent.update_expected_wait(
-                        mu_k if mu_k > 0 else 1.0, self.model.queue_discipline
-                    )
+                new_agent.update_expected_wait(
+                    mu_k if mu_k > 0 else 1.0, self.model.queue_discipline
+                )
 
             elif U <= R_A + R_S:
                 # --- EVENT: Service Completion ---
@@ -389,12 +380,7 @@ class QueueSimulator:
             if T_k > 0:
                 p_k_estimate = T_k / T
 
-                # IMPORTANT: mu_k must reflect the actual service capacity used in state k.
-                # The model's mu_k_fn returns the MAX service rate, but only if k > 0.
-                # In the simulation: mu_k should be 0 if k=0, and mu_k_fn(k) if k>0.
-
                 # Let's rely on the definition: E[mu_k] = sum(p_k * mu_k_fn(k))
-                # The provided mu_k_fn for M/M/1 was faulty, assuming mu_k_fn(0) should be 0.
                 # If we trust the function *passed in*, we use it:
                 mu_k_raw = mu_k_fn(k)
 

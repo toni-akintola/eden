@@ -255,7 +255,7 @@ class QueueDiscipline(Enum):
 
     FCFS = "First Come First Serve"
     LIFO = "Last Come First Serve"
-    SIRO = "Service In Random Order"  # Service in Random Order
+    SIRO = "Service In Random Order"
 
 
 class InformationRule(Enum):

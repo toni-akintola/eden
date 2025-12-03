@@ -12,4 +12,5 @@ dependencies = [
     "openai>=2.7.1",
     "pettingzoo>=1.25.0",
     "pygame>=2.6.1",
+    "seaborn>=0.13.2",
 ]
