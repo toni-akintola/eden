@@ -1,16 +1,16 @@
 [project]
 name = "eden"
 version = "0.1.0"
-description = "Add your description here"
+description = "EDEN: Economic Design Engine - LLM-Driven Evolutionary Search for Optimal Economic Mechanism Design"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "click>=8.3.0",
-    "emergent>=0.1.0",
     "langfuse>=3.10.3",
-    "modal>=1.2.4",
     "openai>=2.7.1",
-    "pettingzoo>=1.25.0",
-    "pygame>=2.6.1",
+    "pydantic>=2.0.0",
+    "matplotlib>=3.7.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
     "seaborn>=0.13.2",
 ]

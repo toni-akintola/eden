@@ -1,141 +1,281 @@
-# Eden - Alpha Evolve Style AI System
+# EDEN: Economic Design Engine
 
-An AI system that uses a three-stage pipeline (Explore-Refine-Act) to iteratively solve problems. Currently implements a number-guessing game as a demonstration.
+**LLM-Driven Evolutionary Search for Optimal Economic Mechanism Design**
+
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+EDEN (Economic Design Engine) is a system that uses large language models (LLMs) to guide evolutionary search for discovering optimal economic mechanisms. This repository implements EDEN's application to the queue design problem formalized by Che and Tercieux (2023), achieving near-optimal welfare scores through LLM-driven mutations.
 
 ## Overview
 
-This system mimics the Alpha Evolve approach with three distinct stages:
+EDEN combines:
+- **Evolutionary Algorithms**: Population-based search with selection pressure, crossover, and elitism
+- **LLM-Guided Mutation**: GPT-5.1 generates intelligent mutations by reasoning about economic incentives
+- **Discrete-Event Simulation**: Accurate evaluation of queue mechanisms via DES
+- **Adaptive Control**: Temperature-based mutation strength that balances exploration and exploitation
 
-1. **🔍 EXPLORE** - Analyzes past attempts, identifies patterns, and generates multiple candidate solutions
-2. **🔧 REFINE** - Evaluates candidates and optimizes the strategy into a single best approach  
-3. **🎯 ACT** - Makes the final decision and commits to an action
+**Key Results:**
+- Achieves welfare scores within 0.07% of theoretical optimum (14.0103 vs 14.0)
+- Independently rediscovers theoretical insights (information opacity, patient queue management)
+- Converges in ~26 generations (424 evaluations) vs. millions required by RL approaches
 
-Each stage can use a different AI model, allowing you to leverage specialized strengths.
+## Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Usage](#usage)
+- [Project Structure](#project-structure)
+- [How It Works](#how-it-works)
+- [Results](#results)
+- [Research Paper](#research-paper)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Installation
 
-1. Install dependencies:
+### Prerequisites
+
+- Python 3.12 or higher
+- [uv](https://github.com/astral-sh/uv) package manager (recommended) or pip
+- OpenAI API key
+
+### Setup
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd eden
+   ```
+
+2. **Install dependencies:**
+   
+   Using `uv` (recommended):
+   ```bash
+   uv sync
+   ```
+   
+   Or using `pip`:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Set your OpenAI API key:
+3. **Set environment variables:**
 ```bash
 export OPENAI_API_KEY='your-api-key-here'
 ```
 
+## Quick Start
+
+Run a short evolutionary search (10 steps, 4 workers):
+
+```bash
+cd evolve-experiment
+uv run python main.py --steps 10 --workers 4 --visualize
+```
+
+This will:
+- Initialize a population with a random seed organism
+- Evolve for 10 generations using LLM-guided mutations
+- Generate visualization plots showing fitness progression
+- Output results to `evolution_results.json`
+
 ## Usage
 
-### Interactive Mode (Recommended)
-
-Simply run the script and follow the prompts:
+### Basic Evolution Run
 
 ```bash
-python main.py
+cd evolve-experiment
+uv run python main.py \
+    --steps 50 \
+    --sim-time 100000 \
+    --workers 8 \
+    --model gpt-5.1 \
+    --visualize
 ```
 
-You'll be prompted to:
-- Set a secret number (1-100)
-- Choose maximum attempts
-- Select AI models for each stage
+### Key Parameters
 
-### Command Line Mode
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--steps` | 10 | Number of evolution steps |
+| `--sim-time` | 10000 | Simulation timesteps per evaluation |
+| `--workers` | 1 | Parallel workers for evaluation |
+| `--model` | gpt-5.1 | LLM model for mutations |
+| `--selection-pressure` | 0.1 | Fraction of children to keep (top 10%) |
+| `--elite-size` | 10 | Number of elite organisms to preserve |
+| `--visualize` | False | Generate visualization plots |
 
-Pass all parameters via command line flags:
+### Full Parameter List
 
 ```bash
-python main.py --secret-number 42 --max-attempts 10 \
-  --explore-model gpt-4o-mini \
-  --refine-model gpt-4o-mini \
-  --act-model gpt-4o-mini
+uv run python main.py --help
 ```
 
-### Available Options
+### Analyzing Results
 
-```
-Options:
-  -s, --secret-number INTEGER  The secret number to guess (1-100)
-  -m, --max-attempts INTEGER   Maximum number of attempts allowed
-  --explore-model TEXT         Model to use for EXPLORE stage
-  --refine-model TEXT          Model to use for REFINE stage
-  --act-model TEXT             Model to use for ACT stage
-  --help                       Show this message and exit
-```
-
-### Examples
-
-**Quick test with gpt-4o-mini:**
-```bash
-python main.py -s 73 -m 15 \
-  --explore-model gpt-4o-mini \
-  --refine-model gpt-4o-mini \
-  --act-model gpt-4o-mini
-```
-
-**Mix different models:**
-```bash
-python main.py -s 50 -m 10 \
-  --explore-model gpt-4o \
-  --refine-model gpt-4o-mini \
-  --act-model gpt-4o-mini
-```
-
-**Interactive mode (no flags):**
-```bash
-python main.py
-```
-
-## Testing Prompts
-
-To preview the prompts without making API calls:
+If you have a CSV export from Langfuse:
 
 ```bash
-python test_prompts.py
+cd notes
+uv run python analyze_run.py --csv-path evolutionary-search-run.csv
 ```
 
-This shows you exactly what each AI model sees at each stage.
+This generates:
+- `fitness_progression.png`: Fitness over generations
+- `fitness_distribution.png`: Distribution of fitness scores
+- `strategy_comparison.png`: Performance by strategy combination
+- `evolution_report.txt`: Detailed text summary
 
 ## Project Structure
 
 ```
 eden/
-├── main.py           # CLI entry point
-├── ensemble.py       # Three-stage pipeline implementation
-├── constants.py      # Prompt builders for each stage
-├── database.py       # Attempt storage and retrieval
-├── evaluator.py      # Evaluation utilities
-├── test_prompts.py   # Test prompts without API calls
-└── requirements.txt  # Python dependencies
+├── evolve-experiment/          # Main EDEN implementation
+│   ├── main.py                 # CLI entry point and evolution loop
+│   ├── database.py             # Population management with fitness-weighted sampling
+│   ├── mutator.py              # LLM-based mutation with adaptive control
+│   ├── queue_simulator.py      # Discrete-event simulation engine
+│   ├── evaluator.py            # Welfare function computation
+│   ├── evolve_types.py         # Type definitions for Che-Tercieux model
+│   ├── utils.py                # Utility functions (parsing, prompts)
+│   └── visualize.py            # Plotting and visualization
+│
+├── notes/                      # Analysis and results
+│   ├── analyze_run.py          # Script to analyze CSV exports
+│   ├── evolutionary-search-run.csv  # Example run data
+│   ├── fitness_progression.png      # Generated visualizations
+│   ├── fitness_distribution.png
+│   ├── strategy_comparison.png
+│   └── evolution_report.txt
+│
+├── main.tex                    # Research paper (LaTeX)
+├── pyproject.toml              # Project dependencies
+├── README.md                   # This file
+├── ARCHITECTURE.md             # Detailed architecture documentation
+└── CONTRIBUTING.md             # Contribution guidelines
 ```
 
 ## How It Works
 
-1. **Initial State**: The AI has no information about the secret number
-2. **Explore**: Analyzes previous attempts (if any) and proposes 2-3 candidate guesses with reasoning
-3. **Refine**: Evaluates the candidates and selects the optimal guess using strategic thinking (e.g., binary search)
-4. **Act**: Makes the final decision with a sanity check
-5. **Feedback**: Receives feedback ("too high", "too low", etc.) and stores it in the database
-6. **Repeat**: Goes back to step 2, now with historical context to learn from
+### 1. Organism Representation
 
-## Extending to Complex Tasks
+Each organism is a complete queue mechanism:
+- **Queue Discipline**: FCFS, LIFO, or SIRO
+- **Information Rule**: Full, Coarse, or No Information
+- **Entry Rule**: Function `x(k) → [0,1]` mapping queue length to entry probability
+- **Exit Rule**: Function `(k,ℓ) → (y, z)` mapping queue state to exit rate/probability
 
-The current implementation demonstrates number guessing, but the architecture is designed for more complex tasks:
+### 2. Fitness Evaluation
 
-- **Code optimization**: Explore different approaches, refine to best algorithm, act by implementing it
-- **Problem solving**: Explore solution space, refine to optimal strategy, act by executing steps
-- **Creative tasks**: Explore multiple ideas, refine to best concept, act by producing final output
+1. Run discrete-event simulation for 100,000 timesteps
+2. Compute empirical stationary distribution
+3. Calculate welfare: `W = (1-α)·R·E[μ_k] + α·(E[μ_k]·V - E[k]·C)`
 
-See the prompt design in `constants.py` to understand how to adapt prompts for different tasks.
+### 3. LLM-Guided Mutation
 
-## Future Enhancements
+GPT-5.1 receives:
+- Parent organism's configuration and fitness
+- High-performing "inspiration" organisms
+- Current mutation strength (small/medium/large/radical)
+- Economic context about queue design
 
-- [ ] Meta-learning layer that adapts strategy based on success rates
-- [ ] Ensemble voting where multiple models vote on decisions
-- [ ] Reflection stage after attempts to improve future performance
-- [ ] Strategy library that models can reference
-- [ ] Confidence calibration for better uncertainty estimates
+The LLM generates a child organism by reasoning about which modifications might improve welfare.
+
+### 4. Evolutionary Operators
+
+- **Selection Pressure**: Only top 10% of children survive
+- **Elitism**: Best organisms preserved across generations
+- **Crossover**: Uniform crossover combining traits from two parents
+- **Adaptive Mutation**: Temperature-based control increases exploration when stuck
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
+
+## Results
+
+### Convergence Performance
+
+- **Best Fitness**: 14.0103 (theoretical optimum: 14.0)
+- **Generations to Convergence**: ~22
+- **Total Evaluations**: 424
+- **Sample Efficiency**: ~4 orders of magnitude better than RL approaches
+
+### Key Discoveries
+
+1. **Information Opacity**: All top organisms use NO_INFORMATION, confirming theoretical predictions
+2. **Patient Queue Management**: Evolved exit rules implement "patience" by removing agents from congested queues
+3. **Queue Discipline Near-Equivalence**: FCFS and SIRO achieve similar performance under no-information conditions
+
+### Visualizations
+
+See `notes/` directory for example visualizations:
+- Fitness progression over generations
+- Distribution of fitness scores
+- Strategy performance comparisons
+
+## Research Paper
+
+This repository accompanies the research paper:
+
+> **The Gardens of EDEN: Optimal Economic Mechanism Design via LLM-Driven Evolutionary Search**
+
+The paper is available as `main.tex` (LaTeX source). Key contributions:
+- Demonstrates LLM-driven evolutionary search for mechanism design
+- Validates Che-Tercieux theoretical results computationally
+- Shows sample efficiency advantages over RL approaches
+
+## Development
+
+### Running Tests
+
+```bash
+# Add tests when implemented
+pytest tests/
+```
+
+### Code Quality
+
+```bash
+# Format code
+ruff format evolve-experiment/
+
+# Lint code
+ruff check evolve-experiment/
+```
+
+### Adding New Features
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+
+## Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Code style guidelines
+- Pull request process
+- Development setup
+- Testing requirements
+
+## References
+
+- **Che, Y.-K., & Tercieux, O. (2023).** Optimal Queue Design. *arXiv preprint arXiv:2307.07746*.
+- **Zheng, S., et al. (2022).** The AI Economist: Taxation policy design via two-level deep multiagent reinforcement learning. *Science Advances*, 8(18), eabk2607.
 
 ## License
 
-MIT
+MIT License - see LICENSE file for details.
 
+## Acknowledgments
+
+- Che and Tercieux for the theoretical queue design framework
+- OpenAI for GPT-5.1 API access
+- Langfuse for observability and tracing
+
+---
+
+**Note**: This is research code. For production use, consider adding:
+- Comprehensive test suite
+- Security hardening (replace `eval()` usage)
+- Performance optimizations (multiprocessing, GPU acceleration)
+- Enhanced error handling
+
+See the codebase quality assessment in the research paper for detailed recommendations.

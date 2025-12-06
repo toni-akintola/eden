@@ -1,12 +1,83 @@
 # Python-generated files
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
 wheels/
-*.egg-info
+*.egg-info/
+.installed.cfg
+*.egg
 
 # Virtual environments
 .venv
+venv/
+ENV/
+env/
+.uv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
 .env
-/notes
+.env.local
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# LaTeX
+*.aux
+*.log
+*.out
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.bbl
+*.blg
+
+# Project-specific
+# Keep analysis scripts but ignore large data files
+notes/*.csv
+notes/*.png
+notes/*.txt
+!notes/analyze_run.py
+
+# Langfuse exports (can be large)
+*.csv
+!notes/analyze_run.py
+
+# Results and outputs
+results/
+outputs/
+*.json
+!pyproject.toml
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
