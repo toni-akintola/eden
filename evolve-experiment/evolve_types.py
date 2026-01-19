@@ -319,11 +319,18 @@ class CheTercieuxQueueModel(BaseModel):
     R_provider_profit: Annotated[
         float, Field(description="Profit R for each served agent (R > 0).", gt=0)
     ]
-
     # Designer's Objective Weight
     alpha_weight: Annotated[
         float,
         Field(description="Weight on agents' welfare (alpha in [0, 1]).", ge=0, le=1),
+    ]
+    D_exit_disutility: Annotated[
+        float,
+        Field(
+            description="Weight on how much the expected designer-induced exit rate contributes to disutility for agents.",
+            ge=0,
+            default=1000,
+        ),
     ]
 
     # Process and Policy Definitions
@@ -350,6 +357,8 @@ class SimulationResults(BaseModel):
     expected_queue_length_E_k: float = 0.0
     # The expected flow rate contribution: E[μ_k] = sum(p_k * μ_k)
     expected_service_flow_E_mu_k: float = 0.0
+    # The expected exit rate: E[R_E] = sum(p_k * R_E_k) where R_E_k is the exit rate in state k
+    expected_exit_rate_E_R_E: float = 0.0
 
     # Service and exit metrics
     num_served: int = 0

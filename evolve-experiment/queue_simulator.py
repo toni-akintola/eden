@@ -365,15 +365,18 @@ class QueueSimulator:
                     self._update_agent_positions()
 
         # After loop, compile results and calculate expected values
-        return self._calculate_final_results(self.current_time, self.time_spent_at_k)
+        return self._calculate_final_results(
+            self.current_time, self.time_spent_at_k, self.num_designer_exit
+        )
 
     def _calculate_final_results(
-        self, T: float, time_spent_at_k: Dict[int, float]
+        self, T: float, time_spent_at_k: Dict[int, float], num_designer_exit: int
     ) -> SimulationResults:
-        """Calculates expected values (E[k] and E[μ_k]) from time-in-state data."""
+        """Calculates expected values (E[k], E[μ_k], and E[R_E]) from time-in-state data."""
 
         E_k_sum = 0.0
         E_mu_k_sum = 0.0
+        E_R_E_sum = 0.0
         mu_k_fn = self.model.primitive_process.service_rate_fn
 
         for k, T_k in time_spent_at_k.items():
@@ -384,15 +387,21 @@ class QueueSimulator:
                 # If we trust the function *passed in*, we use it:
                 mu_k_raw = mu_k_fn(k)
 
-                # BUT, since the definition of the M/M/1 example was wrong and must be fixed,
-                # we must calculate E[mu_k] correctly: the *actual* service rate is 0 if k=0.
                 # The designer's mu_k_fn(k) is the *potential* rate.
 
                 # Fix: The effective rate is the user's rate only if k > 0, otherwise 0.
                 mu_k_effective = mu_k_raw if k > 0 else 0.0
 
+                # Calculate expected exit rate E[R_E] = sum(p_k * R_E_k)
+                # R_E_k is the sum of exit rates for all agents when queue length is k
+                R_E_k = 0.0
+                for l in range(k):
+                    y_k_l, _ = self.model.design_rules.exit_rule_fn(k, l + 1)
+                    R_E_k += y_k_l
+
                 E_k_sum += k * p_k_estimate
                 E_mu_k_sum += p_k_estimate * mu_k_effective
+                E_R_E_sum += p_k_estimate * R_E_k
 
         # Calculate average wait time for served agents
         avg_wait = (
@@ -409,36 +418,6 @@ class QueueSimulator:
             num_designer_exit=self.num_designer_exit,
             expected_queue_length_E_k=E_k_sum,
             expected_service_flow_E_mu_k=E_mu_k_sum,
+            expected_exit_rate_E_R_E=E_R_E_sum,
             avg_wait_time_served=avg_wait,
         )
-
-    @staticmethod
-    def evaluate_designer_performance(
-        model: CheTercieuxQueueModel, results: SimulationResults
-    ) -> float:
-        """
-        Calculates the designer's objective score (W) using the calculated expected
-        values, which approximates the long-run time average.
-
-        W = (1-alpha)R * E[μ_k] + alpha * (E[μ_k]V - E[k]C)
-        """
-
-        alpha = model.alpha_weight
-        R = model.R_provider_profit
-        V = model.V_surplus
-        C = model.C_waiting_cost
-
-        E_mu_k = results.expected_service_flow_E_mu_k
-        E_k = results.expected_queue_length_E_k
-
-        # 1. Provider's Profit Term: (1 - α) * R * E[μ_k]
-        provider_profit_term = (1.0 - alpha) * R * E_mu_k
-
-        # 2. Agent's Utility Term: α * (E[μ_k] * V - E[k] * C)
-        # Note: The expected flow rate E[μ_k] * V is the expected gross surplus
-        # The expected cost E[k] * C is the expected waiting cost (as k agents incur cost C per period)
-        agent_utility_term = alpha * (E_mu_k * V - E_k * C)
-
-        W_score = provider_profit_term + agent_utility_term
-
-        return W_score
