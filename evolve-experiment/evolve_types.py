@@ -332,6 +332,29 @@ class CheTercieuxQueueModel(BaseModel):
             default=1000,
         ),
     ]
+    # Heterogeneous exit disutility weights
+    exit_weight_mean: Annotated[
+        float,
+        Field(
+            description="Mean of normal distribution for sampling exit disutility weights.",
+            default=1.0,
+        ),
+    ]
+    exit_weight_std: Annotated[
+        float,
+        Field(
+            description="Standard deviation of normal distribution for sampling exit disutility weights.",
+            ge=0,
+            default=0.2,
+        ),
+    ]
+    exit_weight_seed: Annotated[
+        Optional[int],
+        Field(
+            description="Random seed for exit weight sampling (None for non-deterministic).",
+            default=None,
+        ),
+    ]
 
     # Process and Policy Definitions
     primitive_process: PrimitiveProcess
