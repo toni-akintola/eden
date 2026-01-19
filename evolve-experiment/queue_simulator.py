@@ -1,7 +1,7 @@
 import random
 import math
 from collections import deque
-from typing import Dict, Deque, List
+from typing import Dict, Deque, List, Optional
 
 # Import all necessary types from the local file
 from evolve_types import (
@@ -11,6 +11,12 @@ from evolve_types import (
     QueueDiscipline,
     InformationRule,
 )
+
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    HAS_NUMPY = False
 
 
 class QueueSimulator:
@@ -28,9 +34,26 @@ class QueueSimulator:
 
         Args:
             model: The queue model configuration
-            enable_belief_updates: If True, agents update beliefs and may voluntarily abandon.
         """
         self.model = model
+        # Initialize exit weight sampling
+        self.exit_weight_mean = model.exit_weight_mean
+        self.exit_weight_std = model.exit_weight_std
+        self.exit_weight_seed = model.exit_weight_seed
+        
+        # Cache weights: w[k][l] = weight for exit from position l in state k
+        # Position l is 1-indexed (1 = front, k = back)
+        self.exit_weights: Dict[int, Dict[int, float]] = {}
+        
+        # Initialize random number generator for weights
+        if HAS_NUMPY:
+            self.exit_weight_rng = np.random.RandomState(self.exit_weight_seed)
+        else:
+            # Fallback to Python's random if numpy not available
+            if self.exit_weight_seed is not None:
+                random.seed(self.exit_weight_seed)
+            self.exit_weight_rng = None
+        
         self.reset_state()
 
     def reset_state(self):
@@ -43,6 +66,7 @@ class QueueSimulator:
         self.num_voluntary_abandonment: int = 0
         self.num_designer_exit: int = 0
         self.total_wait_time_served: float = 0.0  # Sum of wait times for served agents
+        # Note: exit_weights cache persists across resets (same weights for same (k,l) pairs)
 
     def _draw_next_event_time(self, total_rate: float) -> float:
         """
@@ -365,15 +389,47 @@ class QueueSimulator:
                     self._update_agent_positions()
 
         # After loop, compile results and calculate expected values
-        return self._calculate_final_results(self.current_time, self.time_spent_at_k)
+        return self._calculate_final_results(
+            self.current_time, self.time_spent_at_k, self.num_designer_exit
+        )
+    
+    def _get_exit_weight(self, k: int, l: int) -> float:
+        """
+        Get or sample weight for exit from position l in state k.
+        
+        Args:
+            k: Queue length (state)
+            l: Position in queue (1-indexed: 1 = front, k = back)
+            
+        Returns:
+            Weight for this exit (non-negative)
+        """
+        if k not in self.exit_weights:
+            self.exit_weights[k] = {}
+        if l not in self.exit_weights[k]:
+            # Sample weight from normal distribution
+            if HAS_NUMPY and self.exit_weight_rng is not None:
+                weight = self.exit_weight_rng.normal(
+                    self.exit_weight_mean, 
+                    self.exit_weight_std
+                )
+            else:
+                # Fallback to Python's random.gauss
+                weight = random.gauss(self.exit_weight_mean, self.exit_weight_std)
+            
+            # Ensure non-negative (truncate at 0)
+            weight = max(0.0, weight)
+            self.exit_weights[k][l] = weight
+        return self.exit_weights[k][l]
 
     def _calculate_final_results(
-        self, T: float, time_spent_at_k: Dict[int, float]
+        self, T: float, time_spent_at_k: Dict[int, float], num_designer_exit: int
     ) -> SimulationResults:
-        """Calculates expected values (E[k] and E[μ_k]) from time-in-state data."""
+        """Calculates expected values (E[k], E[μ_k], and E[R_E]) from time-in-state data."""
 
         E_k_sum = 0.0
         E_mu_k_sum = 0.0
+        E_R_E_sum = 0.0
         mu_k_fn = self.model.primitive_process.service_rate_fn
 
         for k, T_k in time_spent_at_k.items():
@@ -384,15 +440,23 @@ class QueueSimulator:
                 # If we trust the function *passed in*, we use it:
                 mu_k_raw = mu_k_fn(k)
 
-                # BUT, since the definition of the M/M/1 example was wrong and must be fixed,
-                # we must calculate E[mu_k] correctly: the *actual* service rate is 0 if k=0.
                 # The designer's mu_k_fn(k) is the *potential* rate.
 
                 # Fix: The effective rate is the user's rate only if k > 0, otherwise 0.
                 mu_k_effective = mu_k_raw if k > 0 else 0.0
 
+                # Calculate weighted expected exit rate E[R_E] = sum(p_k * sum(w_k_l * y_k_l))
+                # R_E_k_weighted is the sum of weighted exit rates for all agents when queue length is k
+                # Each exit rate y_k_l is multiplied by its heterogeneous weight w_k_l
+                R_E_k_weighted = 0.0
+                for l in range(k):
+                    y_k_l, _ = self.model.design_rules.exit_rule_fn(k, l + 1)
+                    weight = self._get_exit_weight(k, l + 1)  # l+1 because position is 1-indexed
+                    R_E_k_weighted += weight * y_k_l
+
                 E_k_sum += k * p_k_estimate
                 E_mu_k_sum += p_k_estimate * mu_k_effective
+                E_R_E_sum += p_k_estimate * R_E_k_weighted
 
         # Calculate average wait time for served agents
         avg_wait = (
@@ -409,36 +473,6 @@ class QueueSimulator:
             num_designer_exit=self.num_designer_exit,
             expected_queue_length_E_k=E_k_sum,
             expected_service_flow_E_mu_k=E_mu_k_sum,
+            expected_exit_rate_E_R_E=E_R_E_sum,
             avg_wait_time_served=avg_wait,
         )
-
-    @staticmethod
-    def evaluate_designer_performance(
-        model: CheTercieuxQueueModel, results: SimulationResults
-    ) -> float:
-        """
-        Calculates the designer's objective score (W) using the calculated expected
-        values, which approximates the long-run time average.
-
-        W = (1-alpha)R * E[μ_k] + alpha * (E[μ_k]V - E[k]C)
-        """
-
-        alpha = model.alpha_weight
-        R = model.R_provider_profit
-        V = model.V_surplus
-        C = model.C_waiting_cost
-
-        E_mu_k = results.expected_service_flow_E_mu_k
-        E_k = results.expected_queue_length_E_k
-
-        # 1. Provider's Profit Term: (1 - α) * R * E[μ_k]
-        provider_profit_term = (1.0 - alpha) * R * E_mu_k
-
-        # 2. Agent's Utility Term: α * (E[μ_k] * V - E[k] * C)
-        # Note: The expected flow rate E[μ_k] * V is the expected gross surplus
-        # The expected cost E[k] * C is the expected waiting cost (as k agents incur cost C per period)
-        agent_utility_term = alpha * (E_mu_k * V - E_k * C)
-
-        W_score = provider_profit_term + agent_utility_term
-
-        return W_score
