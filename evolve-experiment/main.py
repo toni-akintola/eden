@@ -7,7 +7,7 @@ import json
 import random
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import List
+from typing import List, Optional
 import click
 from langfuse import observe, propagate_attributes
 from database import Database, Organism
@@ -32,6 +32,9 @@ def organism_to_model(
     C_waiting_cost: float,
     R_provider_profit: float,
     alpha_weight: float,
+    exit_weight_mean: float = 1.0,
+    exit_weight_std: float = 0.2,
+    exit_weight_seed: Optional[int] = 42,
 ) -> CheTercieuxQueueModel:
     """Convert an Organism's code to a CheTercieuxQueueModel."""
     entry_fn = parse_code_to_function(organism.entry_rule_code)
@@ -71,6 +74,9 @@ def organism_to_model(
         design_rules=EntryExitRule(entry_rule_fn=entry_fn, exit_rule_fn=exit_fn),
         queue_discipline=queue_discipline,
         information_rule=information_rule,
+        exit_weight_mean=exit_weight_mean,
+        exit_weight_std=exit_weight_std,
+        exit_weight_seed=exit_weight_seed,
     )
 
 
@@ -147,6 +153,9 @@ def evaluate_organism(
     C_waiting_cost: float,
     R_provider_profit: float,
     alpha_weight: float,
+    exit_weight_mean: float = 1.0,
+    exit_weight_std: float = 0.2,
+    exit_weight_seed: Optional[int] = None,
     return_results: bool = False,
     cache_results: bool = True,
 ):
@@ -154,6 +163,9 @@ def evaluate_organism(
     Evaluate an organism and return its fitness score.
 
     Args:
+        exit_weight_mean: Mean of normal distribution for exit weights
+        exit_weight_std: Std dev of normal distribution for exit weights
+        exit_weight_seed: Random seed for exit weight sampling
         return_results: If True, returns (fitness, results) tuple instead of just fitness
         cache_results: If True, caches simulation results on the organism for reuse
 
@@ -168,6 +180,9 @@ def evaluate_organism(
         C_waiting_cost,
         R_provider_profit,
         alpha_weight,
+        exit_weight_mean=exit_weight_mean,
+        exit_weight_std=exit_weight_std,
+        exit_weight_seed=exit_weight_seed,
     )
     simulator = QueueSimulator(model)
     results = simulator.run_simulation(max_time=simulation_time)
@@ -195,6 +210,9 @@ def mutate_and_evaluate(
     R_provider_profit: float,
     alpha_weight: float,
     database: Database,
+    exit_weight_mean: float = 1.0,
+    exit_weight_std: float = 0.2,
+    exit_weight_seed: Optional[int] = None,
 ) -> Organism:
     """Mutate and evaluate a single organism."""
     # Use cached simulation results if available, otherwise re-run
@@ -211,6 +229,9 @@ def mutate_and_evaluate(
             C_waiting_cost,
             R_provider_profit,
             alpha_weight,
+            exit_weight_mean=exit_weight_mean,
+            exit_weight_std=exit_weight_std,
+            exit_weight_seed=exit_weight_seed,
             return_results=True,
             cache_results=True,
         )
@@ -240,6 +261,9 @@ def mutate_and_evaluate(
         C_waiting_cost,
         R_provider_profit,
         alpha_weight,
+        exit_weight_mean=exit_weight_mean,
+        exit_weight_std=exit_weight_std,
+        exit_weight_seed=exit_weight_seed,
         cache_results=True,
     )
 
@@ -265,6 +289,9 @@ def crossover_and_evaluate(
     C_waiting_cost: float,
     R_provider_profit: float,
     alpha_weight: float,
+    exit_weight_mean: float = 1.0,
+    exit_weight_std: float = 0.2,
+    exit_weight_seed: Optional[int] = None,
 ) -> Organism:
     """Perform crossover between two parents and evaluate the child."""
     child = crossover(parent1, parent2)
@@ -278,6 +305,9 @@ def crossover_and_evaluate(
         C_waiting_cost,
         R_provider_profit,
         alpha_weight,
+        exit_weight_mean=exit_weight_mean,
+        exit_weight_std=exit_weight_std,
+        exit_weight_seed=exit_weight_seed,
         cache_results=True,
     )
 
@@ -309,6 +339,9 @@ def run_evolution(
     output_file: str | None,
     selection_pressure: float = 0.1,  # Keep top 10% of children
     elite_size: int = 10,  # Number of elite organisms to preserve
+    exit_weight_mean: float = 1.0,
+    exit_weight_std: float = 0.2,
+    exit_weight_seed: Optional[int] = 42,
 ) -> dict:
     """
     Run the evolutionary optimization loop with parallel workers.
@@ -336,6 +369,9 @@ def run_evolution(
         C_waiting_cost,
         R_provider_profit,
         alpha_weight,
+        exit_weight_mean=exit_weight_mean,
+        exit_weight_std=exit_weight_std,
+        exit_weight_seed=exit_weight_seed,
         cache_results=True,
     )
     database.add(seed)
@@ -413,6 +449,9 @@ def run_evolution(
                                 C_waiting_cost=C_waiting_cost,
                                 R_provider_profit=R_provider_profit,
                                 alpha_weight=alpha_weight,
+                                exit_weight_mean=exit_weight_mean,
+                                exit_weight_std=exit_weight_std,
+                                exit_weight_seed=exit_weight_seed,
                             )
                         )
                     else:
@@ -430,6 +469,9 @@ def run_evolution(
                                 R_provider_profit=R_provider_profit,
                                 alpha_weight=alpha_weight,
                                 database=database,
+                                exit_weight_mean=exit_weight_mean,
+                                exit_weight_std=exit_weight_std,
+                                exit_weight_seed=exit_weight_seed,
                             )
                         )
 
@@ -542,6 +584,24 @@ def run_evolution(
         "population_size": database.size(),
         "history": history,
         "database": database,
+        "input_parameters": {
+            "num_steps": num_steps,
+            "simulation_time": simulation_time,
+            "model_name": model_name,
+            "arrival_rate": arrival_rate,
+            "service_rate": service_rate,
+            "V_surplus": V_surplus,
+            "C_waiting_cost": C_waiting_cost,
+            "R_provider_profit": R_provider_profit,
+            "alpha_weight": alpha_weight,
+            "random_seed": random_seed,
+            "num_workers": num_workers,
+            "selection_pressure": selection_pressure,
+            "elite_size": elite_size,
+            "exit_weight_mean": exit_weight_mean,
+            "exit_weight_std": exit_weight_std,
+            "exit_weight_seed": exit_weight_seed,
+        },
     }
 
     if verbose:
@@ -561,6 +621,7 @@ def run_evolution(
             "best_organism": results["best_organism"],
             "population_size": results["population_size"],
             "history": history,
+            "input_parameters": results["input_parameters"],
         }
         with open(output_file, "w") as f:
             json.dump(json_results, f, indent=2)
@@ -641,6 +702,20 @@ def run_evolution(
     show_default=True,
     help="Number of elite organisms to always preserve",
 )
+@click.option(
+    "--exit-weight-mean",
+    default=1.0,
+    show_default=True,
+    help="Mean of normal distribution for exit disutility weights",
+    type=float,
+)
+@click.option(
+    "--exit-weight-std",
+    default=0.2,
+    show_default=True,
+    help="Standard deviation of normal distribution for exit disutility weights",
+    type=float,
+)
 def main(
     steps,
     sim_time,
@@ -658,6 +733,8 @@ def main(
     visualize,
     selection_pressure,
     elite_size,
+    exit_weight_mean,
+    exit_weight_std
 ):
     """Evolutionary optimizer for Che-Tercieux queue models."""
     if not os.getenv("OPENAI_API_KEY"):
@@ -666,6 +743,9 @@ def main(
 
     # Generate a unique session ID for this evolution run
     session_id = f"evolution-{uuid.uuid4().hex[:8]}"
+    
+    # Use the same seed for exit weights as the main search seed if not specified
+    exit_weight_seed: int = int(seed)
 
     with propagate_attributes(session_id=session_id):
         results = run_evolution(
@@ -684,6 +764,9 @@ def main(
             output_file=output,
             selection_pressure=selection_pressure,
             elite_size=elite_size,
+            exit_weight_mean=exit_weight_mean,
+            exit_weight_std=exit_weight_std,
+            exit_weight_seed=exit_weight_seed,
         )
 
         if visualize:
