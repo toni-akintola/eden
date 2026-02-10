@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+import inspect
 """
 Run a simulation with Che and Tercieux's optimal configuration:
 - Optimal entry rule
@@ -25,7 +27,8 @@ def optimal_entry_rule(k: int) -> float:
     This rule achieves welfare ~13.98 (very close to theoretical optimum of 14.0).
     """
     # Based on best evolved organism: high entry probability for short queues
-    return (0.90 if k < 2 else (0.55 if k < 6 else (0.20 if k < 10 else 0.05)))
+    K = 18
+    return 1.0 if k < K else 0.0
 
 
 def optimal_exit_rule(k: int, l: int) -> tuple[float, float]:
@@ -40,15 +43,13 @@ def optimal_exit_rule(k: int, l: int) -> tuple[float, float]:
     Returns:
         (y_k_l, z_k_l): Exit rate and probability for position l in state k
     """
-    # Based on best evolved organism: uniform exit rate when queue is long
-    # Exit rule applies uniformly to all positions when k > threshold
-    return (0.0, 0.0)  # No exits for shorter queues
+    return (0.0, 0.0)
 
 
 def main():
     # Che and Tercieux's standard parameters
-    arrival_rate = 2.0  # lambda
-    service_rate = 3.0  # mu
+    arrival_rate = 3.0  # lambda
+    service_rate = 2.0  # mu
     V_surplus = 10.0
     C_waiting_cost = 1.0
     R_provider_profit = 5.0
@@ -64,7 +65,7 @@ def main():
         C_waiting_cost=C_waiting_cost,
         R_provider_profit=R_provider_profit,
         alpha_weight=alpha_weight,
-        D_exit_disutility=1000,  # No disutility for exits (matches theoretical optimum)
+        D_exit_disutility=100,  # No disutility for exits (matches theoretical optimum)
         primitive_process=PrimitiveProcess(
             arrival_rate_fn=lambda k: arrival_rate,
             service_rate_fn=lambda k: service_rate,
@@ -93,10 +94,10 @@ def main():
     print(f"  R (provider profit): {R_provider_profit}")
     print(f"  α (alpha weight): {alpha_weight}")
     print(f"\nConfiguration:")
-    print(f"  Queue Discipline: FCFS")
-    print(f"  Information Rule: NO_INFORMATION")
-    print(f"  Entry Rule: Optimal (decreasing with queue length)")
-    print(f"  Exit Rule: Optimal (removes from back when queue is long)")
+    print(f"  Queue Discipline: {model.queue_discipline}")
+    print(f"  Information Rule: {model.information_rule}")
+    print(f"  Entry Rule: {inspect.getsource(optimal_entry_rule)}")
+    print(f"  Exit Rule: {inspect.getsource(optimal_exit_rule)}")
     print("\nRunning simulation...")
     
     simulator = QueueSimulator(model)

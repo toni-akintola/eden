@@ -1,0 +1,72 @@
+Simulation time: 100,000 timesteps
+Parameters:
+  Arrival rate (λ): 2.0
+  Service rate (μ): 3.0
+  V (surplus): 10.0
+  C (waiting cost): 1.0
+  R (provider profit): 5.0
+  α (alpha weight): 0.5
+
+Configuration:
+  Queue Discipline: QueueDiscipline.LIFO
+  Information Rule: InformationRule.COARSE_INFORMATION
+  Entry Rule: def optimal_entry_rule(k: int) -> float:
+    """
+    Che and Tercieux's optimal entry rule (based on evolved near-optimal solution).
+    Entry probability decreases as queue length increases to maintain optimal balance.
+    This rule achieves welfare ~13.98 (very close to theoretical optimum of 14.0).
+    """
+    # Based on best evolved organism: high entry probability for short queues
+    return (1.0 if k == 0 else (0.9 if k == 1 else (0.78 if k == 2 else (0.62 if k == 3 else (0.44 if k == 4 else (0.26 if k == 5 else (0.14 if k < 9 else (0.04 if k < 13 else 0.0))))))))
+
+  Exit Rule: def optimal_exit_rule(k: int, l: int) -> tuple[float, float]:
+    """
+    Che and Tercieux's optimal exit rule (based on evolved near-optimal solution).
+    Removes agents uniformly when queue length exceeds threshold.
+    
+    Args:
+        k: Queue length
+        l: Position in queue (1-indexed: 1 = front, k = back)
+    
+    Returns:
+        (y_k_l, z_k_l): Exit rate and probability for position l in state k
+    """
+    # Based on best evolved organism: uniform exit rate when queue is long
+    # Exit rule applies uniformly to all positions when k > threshold
+    return ((0.08, 0.16) if k > 14 else ((0.04, 0.10) if k > 10 else (0.0, 0.0)))
+
+
+Running simulation...
+
+================================================================================
+SIMULATION RESULTS
+================================================================================
+
+Welfare Score (W): 13.185708
+Theoretical Optimum: 14.0
+Difference: 0.814292
+
+Expected Values:
+  Expected Queue Length E[k]: 1.269239
+  Expected Service Flow E[μ_k]: 1.842710
+  Expected Exit Rate E[R_E]: 0.000000
+
+Service Statistics:
+  Total agents served: 184,607
+  Voluntary abandonments: 0
+  Designer-induced exits: 0
+  Average wait time (served): 0.6875
+
+Time Distribution (top states):
+  Total simulation time: 100000.00
+  State k=0: 38576.32 (38.58%)
+  State k=1: 25653.03 (25.65%)
+  State k=2: 17100.72 (17.10%)
+  State k=3: 11286.15 (11.29%)
+  State k=4: 4654.61 (4.65%)
+  State k=5: 1865.04 (1.87%)
+  State k=6: 785.96 (0.79%)
+  State k=7: 73.76 (0.07%)
+  State k=8: 4.41 (0.00%)
+
+================================================================================
