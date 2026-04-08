@@ -14,6 +14,7 @@ from evolve_types import (
 
 try:
     import numpy as np
+
     HAS_NUMPY = True
 except ImportError:
     HAS_NUMPY = False
@@ -40,11 +41,11 @@ class QueueSimulator:
         self.exit_weight_mean = model.exit_weight_mean
         self.exit_weight_std = model.exit_weight_std
         self.exit_weight_seed = model.exit_weight_seed
-        
+
         # Cache weights: w[k][l] = weight for exit from position l in state k
         # Position l is 1-indexed (1 = front, k = back)
         self.exit_weights: Dict[int, Dict[int, float]] = {}
-        
+
         # Initialize random number generator for weights
         if HAS_NUMPY:
             self.exit_weight_rng = np.random.RandomState(self.exit_weight_seed)
@@ -53,7 +54,7 @@ class QueueSimulator:
             if self.exit_weight_seed is not None:
                 random.seed(self.exit_weight_seed)
             self.exit_weight_rng = None
-        
+
         self.reset_state()
 
     def reset_state(self):
@@ -392,15 +393,15 @@ class QueueSimulator:
         return self._calculate_final_results(
             self.current_time, self.time_spent_at_k, self.num_designer_exit
         )
-    
+
     def _get_exit_weight(self, k: int, l: int) -> float:
         """
         Get or sample weight for exit from position l in state k.
-        
+
         Args:
             k: Queue length (state)
             l: Position in queue (1-indexed: 1 = front, k = back)
-            
+
         Returns:
             Weight for this exit (non-negative)
         """
@@ -410,13 +411,12 @@ class QueueSimulator:
             # Sample weight from normal distribution
             if HAS_NUMPY and self.exit_weight_rng is not None:
                 weight = self.exit_weight_rng.normal(
-                    self.exit_weight_mean, 
-                    self.exit_weight_std
+                    self.exit_weight_mean, self.exit_weight_std
                 )
             else:
                 # Fallback to Python's random.gauss
                 weight = random.gauss(self.exit_weight_mean, self.exit_weight_std)
-            
+
             # Ensure non-negative (truncate at 0)
             weight = max(0.0, weight)
             self.exit_weights[k][l] = weight
@@ -451,7 +451,9 @@ class QueueSimulator:
                 R_E_k_weighted = 0.0
                 for l in range(k):
                     y_k_l, _ = self.model.design_rules.exit_rule_fn(k, l + 1)
-                    weight = self._get_exit_weight(k, l + 1)  # l+1 because position is 1-indexed
+                    weight = self._get_exit_weight(
+                        k, l + 1
+                    )  # l+1 because position is 1-indexed
                     R_E_k_weighted += weight * y_k_l
 
                 E_k_sum += k * p_k_estimate

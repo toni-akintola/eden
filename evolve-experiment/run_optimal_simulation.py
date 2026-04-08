@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import inspect
+
 """
 Run a simulation with Che and Tercieux's optimal configuration:
 - Optimal entry rule
@@ -35,11 +36,11 @@ def optimal_exit_rule(k: int, l: int) -> tuple[float, float]:
     """
     Che and Tercieux's optimal exit rule (based on evolved near-optimal solution).
     Removes agents uniformly when queue length exceeds threshold.
-    
+
     Args:
         k: Queue length
         l: Position in queue (1-indexed: 1 = front, k = back)
-    
+
     Returns:
         (y_k_l, z_k_l): Exit rate and probability for position l in state k
     """
@@ -55,7 +56,7 @@ def main():
     R_provider_profit = 5.0
     alpha_weight = 0.5
     simulation_time = 100000.0
-    
+
     # Create the optimal model
     # Note: D_exit_disutility defaults to 1000, which heavily penalizes exits
     # For Che-Tercieux optimal, we may want D=0 or a lower value
@@ -80,7 +81,7 @@ def main():
         exit_weight_std=0.2,
         exit_weight_seed=42,
     )
-    
+
     # Run simulation
     print("=" * 80)
     print("Running Che-Tercieux Optimal Configuration Simulation")
@@ -99,13 +100,13 @@ def main():
     print(f"  Entry Rule: {inspect.getsource(optimal_entry_rule)}")
     print(f"  Exit Rule: {inspect.getsource(optimal_exit_rule)}")
     print("\nRunning simulation...")
-    
+
     simulator = QueueSimulator(model)
     results = simulator.run_simulation(max_time=simulation_time)
-    
+
     # Calculate welfare
     welfare = evaluate_designer_performance(model, results)
-    
+
     # Print results
     print("\n" + "=" * 80)
     print("SIMULATION RESULTS")
@@ -123,15 +124,17 @@ def main():
     print(f"  Designer-induced exits: {results.num_designer_exit:,}")
     print(f"  Average wait time (served): {results.avg_wait_time_served:.4f}")
     print(f"\nTime Distribution (top states):")
-    
+
     # Show time spent in each state
     total_time = results.total_run_time
-    sorted_states = sorted(results.time_spent_at_k.items(), key=lambda x: x[1], reverse=True)
+    sorted_states = sorted(
+        results.time_spent_at_k.items(), key=lambda x: x[1], reverse=True
+    )
     print(f"  Total simulation time: {total_time:.2f}")
     for k, time_spent in sorted_states[:10]:
         pct = (time_spent / total_time) * 100 if total_time > 0 else 0
         print(f"  State k={k}: {time_spent:.2f} ({pct:.2f}%)")
-    
+
     print("\n" + "=" * 80)
 
 

@@ -734,7 +734,7 @@ def main(
     selection_pressure,
     elite_size,
     exit_weight_mean,
-    exit_weight_std
+    exit_weight_std,
 ):
     """Evolutionary optimizer for Che-Tercieux queue models."""
     if not os.getenv("OPENAI_API_KEY"):
@@ -743,7 +743,7 @@ def main(
 
     # Generate a unique session ID for this evolution run
     session_id = f"evolution-{uuid.uuid4().hex[:8]}"
-    
+
     # Use the same seed for exit weights as the main search seed if not specified
     exit_weight_seed: int = int(seed)
 
